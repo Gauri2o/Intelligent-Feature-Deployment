@@ -1,54 +1,229 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+
 
 function Navbar() {
-  const location = useLocation();
 
-  const linkStyle = (path) => ({
-    color: "#fff",
-    textDecoration: "none",
-    padding: "10px 18px",
-    borderRadius: "6px",
-    backgroundColor: location.pathname === path ? "#2563eb" : "transparent",
-    transition: "0.3s",
-    fontWeight: "500",
-  });
+
+  const navigate = useNavigate();
+
+
+  const {
+    token,
+    user,
+    logout
+  } = useAuth();
+
+
+
+
+  const handleLogout = () => {
+
+    logout();
+
+    navigate("/login");
+
+  };
+
+
+
 
   return (
+
     <nav
+
       style={{
-        background: "#1e293b",
-        padding: "15px 40px",
+
         display: "flex",
+
         justifyContent: "space-between",
+
         alignItems: "center",
+
+        padding: "15px 30px",
+
+        background: "#1e293b",
+
+        color: "white"
+
       }}
+
     >
-      <h2
-        style={{
-          color: "white",
-          margin: 0,
-          fontSize: "24px",
-        }}
-      >
-        🚀 Feature Flags
+
+
+      <h2>
+        🚀 Feature Deployment
       </h2>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "15px",
-        }}
-      >
-        <Link to="/" style={linkStyle("/")}>
-          Dashboard
-        </Link>
 
-        <Link to="/" style={linkStyle("/")}>
-          Flags
-        </Link>
+
+
+      <div
+
+        style={{
+
+          display: "flex",
+
+          alignItems: "center",
+
+          gap: "18px"
+
+        }}
+
+      >
+
+
+
+      {
+        token ?
+
+        <>
+
+
+          <Link
+            to="/flags"
+            style={linkStyle}
+          >
+            Dashboard
+          </Link>
+
+
+
+
+          <Link
+            to="/create-flag"
+            style={linkStyle}
+          >
+            ➕ Create Flag
+          </Link>
+
+
+
+
+          <Link
+            to="/audit"
+            style={linkStyle}
+          >
+            📋 Audit Logs
+          </Link>
+
+
+
+
+          <div
+
+            style={{
+
+              marginLeft:"10px",
+
+              textAlign:"right"
+
+            }}
+
+          >
+
+            <div>
+              👤 {user?.username || "User"}
+            </div>
+
+
+            <small>
+              {user?.role || "Developer"}
+            </small>
+
+
+          </div>
+
+
+
+
+
+          <button
+
+            onClick={handleLogout}
+
+            style={logoutButton}
+
+          >
+
+            Logout
+
+          </button>
+
+
+
+        </>
+
+
+        :
+
+
+        <>
+
+
+          <Link
+            to="/login"
+            style={linkStyle}
+          >
+            Login
+          </Link>
+
+
+
+          <Link
+            to="/signup"
+            style={linkStyle}
+          >
+            Signup
+          </Link>
+
+
+        </>
+
+
+      }
+
+
+
       </div>
+
+
     </nav>
+
   );
+
 }
+
+
+
+
+const linkStyle = {
+
+  color: "white",
+
+  textDecoration: "none",
+
+};
+
+
+
+
+const logoutButton = {
+
+  background: "#dc2626",
+
+  color: "white",
+
+  border: "none",
+
+  padding: "8px 15px",
+
+  borderRadius: "6px",
+
+  cursor: "pointer"
+
+};
+
+
 
 export default Navbar;

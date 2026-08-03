@@ -1,21 +1,129 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Navbar from "./components/Navbar";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate
+} from "react-router-dom";
+
+
+import Home from "./pages/Home";
+
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+
 import FlagPage from "./pages/FlagPage";
-import FlagDetail from "./pages/FlagDetail";
+import CreateFlag from "./pages/CreateFlag";
 import EditFlag from "./pages/EditFlag";
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Navbar />
+import AuditLogs from "./pages/AuditLogs";
 
-      <Routes>
-        <Route path="/" element={<FlagPage />} />
-        <Route path="/flag/:key" element={<FlagDetail />} />
-        <Route path="/edit/:key" element={<EditFlag />} />
-      </Routes>
-    </BrowserRouter>
+import Navbar from "./components/Navbar";
+
+import { AuthProvider } from "./context/AuthContext";
+
+
+
+function App() {
+
+
+  return (
+
+    <AuthProvider>
+
+      <BrowserRouter>
+
+
+        <Navbar />
+
+
+        <Routes>
+
+
+
+          {/* Landing Page */}
+
+          <Route
+            path="/"
+            element={<Home />}
+          />
+
+
+
+          {/* Authentication */}
+
+          <Route
+            path="/login"
+            element={<Login />}
+          />
+
+
+          <Route
+            path="/signup"
+            element={<Signup />}
+          />
+
+
+
+
+          {/* Feature Flags */}
+
+          <Route
+            path="/flags"
+            element={<FlagPage />}
+          />
+
+
+
+          <Route
+            path="/create-flag"
+            element={<CreateFlag />}
+          />
+
+
+
+          <Route
+            path="/edit-flag/:key"
+            element={<EditFlag />}
+          />
+
+
+
+
+
+          {/* Audit Logs */}
+
+          <Route
+            path="/audit"
+            element={<AuditLogs />}
+          />
+
+
+
+
+
+          {/* Unknown Route */}
+
+          <Route
+            path="*"
+            element={
+              <Navigate to="/" />
+            }
+          />
+
+
+
+        </Routes>
+
+
+      </BrowserRouter>
+
+
+    </AuthProvider>
+
   );
+
 }
+
+
 
 export default App;
