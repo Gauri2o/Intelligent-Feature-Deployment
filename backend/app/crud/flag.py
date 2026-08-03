@@ -45,7 +45,11 @@ def get_flags(db: Session):
 
 
 def get_flag_by_key(db: Session, key: str):
-    return db.query(Flag).filter(Flag.flag_key == key).first()
+    return (
+        db.query(Flag)
+        .filter(Flag.flag_key == key)
+        .first()
+    )
 
 
 def update_flag(db: Session, key: str, flag: FlagUpdate):
@@ -58,6 +62,32 @@ def update_flag(db: Session, key: str, flag: FlagUpdate):
 
     for field, value in update_data.items():
         setattr(db_flag, field, value)
+
+    db.commit()
+    db.refresh(db_flag)
+
+    return db_flag
+
+
+def delete_flag(db: Session, key: str):
+    db_flag = get_flag_by_key(db, key)
+
+    if not db_flag:
+        return None
+
+    db.delete(db_flag)
+    db.commit()
+
+    return True
+
+
+def toggle_flag(db: Session, key: str):
+    db_flag = get_flag_by_key(db, key)
+
+    if not db_flag:
+        return None
+
+    db_flag.enabled = not db_flag.enabled
 
     db.commit()
     db.refresh(db_flag)

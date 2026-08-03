@@ -8,6 +8,8 @@ from app.crud.flag import (
     get_flags,
     get_flag_by_key,
     update_flag,
+    delete_flag,
+    toggle_flag,
 )
 
 from app.schemas.flag import (
@@ -23,7 +25,10 @@ from app.schemas.evaluation import (
 
 from app.services.evaluator import evaluate_flag
 
-router = APIRouter(prefix="/flags", tags=["Flags"])
+router = APIRouter(
+    prefix="/flags",
+    tags=["Flags"],
+)
 
 
 @router.post("/", response_model=FlagResponse)
@@ -49,7 +54,9 @@ def create_new_flag(
 
 
 @router.get("/", response_model=list[FlagResponse])
-def read_flags(db: Session = Depends(get_db)):
+def read_flags(
+    db: Session = Depends(get_db),
+):
     return get_flags(db)
 
 
@@ -86,7 +93,44 @@ def edit_flag(
     return updated
 
 
-@router.post("/evaluate", response_model=EvaluationResponse)
+@router.delete("/{key}")
+def remove_flag(
+    key: str,
+    db: Session = Depends(get_db),
+):
+    deleted = delete_flag(db, key)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Flag not found",
+        )
+
+    return {
+        "message": "Flag deleted successfully"
+    }
+
+
+@router.patch("/{key}/toggle", response_model=FlagResponse)
+def toggle(
+    key: str,
+    db: Session = Depends(get_db),
+):
+    updated = toggle_flag(db, key)
+
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail="Flag not found",
+        )
+
+    return updated
+
+
+@router.post(
+    "/evaluate",
+    response_model=EvaluationResponse,
+)
 def evaluate(
     request: EvaluationRequest,
     db: Session = Depends(get_db),
