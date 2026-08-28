@@ -32,7 +32,9 @@ router = APIRouter(
     prefix="/flags",
     tags=["Flags"],
 )
-
+from app.services.redis_client import (
+    delete_flag_evaluation_cache
+)
 
 # ---------------------------------------------------
 # Create Flag
@@ -118,6 +120,10 @@ def read_flag(
 # Update Flag
 # ---------------------------------------------------
 
+# ---------------------------------------------------
+# Update Flag
+# ---------------------------------------------------
+
 @router.put(
     "/{key}",
     response_model=FlagResponse
@@ -139,6 +145,11 @@ def edit_flag(
             status_code=404,
             detail="Flag not found"
         )
+
+    # Clear old Redis evaluation cache
+    delete_flag_evaluation_cache(
+        flag_key=updated.flag_key
+    )
 
     create_log(
         db=db,

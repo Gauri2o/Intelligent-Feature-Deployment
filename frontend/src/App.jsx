@@ -15,96 +15,93 @@ import CreateFlag from "./pages/CreateFlag";
 import EditFlag from "./pages/EditFlag";
 import FlagDetail from "./pages/FlagDetail";
 
+import EvaluateFlag from "./pages/EvaluateFlag";
 import AuditLogs from "./pages/AuditLogs";
 
 import Navbar from "./components/Navbar";
 
 import { AuthProvider } from "./context/AuthContext";
 
-
 function App() {
-
   return (
-
     <AuthProvider>
-
       <BrowserRouter>
 
         <Navbar />
 
-        <Routes>
+        <main className="app-content">
+          <Routes>
 
-          {/* Landing Page */}
-          <Route
-            path="/"
-            element={<Home />}
-          />
+            {/* Landing Page */}
+            <Route
+              path="/"
+              element={<Home />}
+            />
 
+            {/* Authentication */}
+            <Route
+              path="/login"
+              element={<Login />}
+            />
 
-          {/* Authentication */}
-          <Route
-            path="/login"
-            element={<Login />}
-          />
+            <Route
+              path="/signup"
+              element={<Signup />}
+            />
 
-          <Route
-            path="/signup"
-            element={<Signup />}
-          />
+            {/* Feature Flags */}
+            <Route
+              path="/flags"
+              element={<FlagPage />}
+            />
 
+            {/* Create Flag */}
+            <Route
+              path="/create-flag"
+              element={<CreateFlag />}
+            />
 
-          {/* Feature Flag Dashboard */}
-          <Route
-            path="/flags"
-            element={<FlagPage />}
-          />
+            {/* Edit Flag */}
+            <Route
+              path="/edit-flag/:key"
+              element={<EditFlag />}
+            />
 
+            {/* Flag Detail */}
+            <Route
+              path="/flag/:key"
+              element={<FlagDetail />}
+            />
 
-          {/* Create Flag */}
-          <Route
-            path="/create-flag"
-            element={<CreateFlag />}
-          />
+            {/* Evaluate */}
+            <Route
+              path="/evaluate"
+              element={<EvaluateFlag />}
+            />
 
+            {/* Audit */}
+            <Route
+              path="/audit"
+              element={<AuditLogs />}
+            />
 
-          {/* Edit Flag */}
-          <Route
-            path="/edit-flag/:key"
-            element={<EditFlag />}
-          />
+            {/* Unknown Route */}
+            <Route
+              path="*"
+              element={
+                <Navigate
+                  to="/flags"
+                  replace
+                />
+              }
+            />
 
-
-          {/* Flag Detail */}
-          <Route
-            path="/flag/:key"
-            element={<FlagDetail />}
-          />
-
-
-          {/* Audit Logs */}
-          <Route
-            path="/audit"
-            element={<AuditLogs />}
-          />
-
-
-          {/* Unknown Route */}
-          <Route
-            path="*"
-            element={
-              <Navigate to="/flags" replace />
-            }
-          />
-
-        </Routes>
+          </Routes>
+        </main>
 
       </BrowserRouter>
-
     </AuthProvider>
-
   );
-
 }
-
 
 export default App;

@@ -1,223 +1,181 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import { useState } from "react";
+import {
+  NavLink,
+  useNavigate
+} from "react-router-dom";
 
 function Navbar() {
   const navigate = useNavigate();
 
-  const {
-    token,
-    user,
-    logout
-  } = useAuth();
-
-  const [environment, setEnvironment] = useState(
-    localStorage.getItem("environment") || "Development"
-  );
-
   const handleLogout = () => {
-    logout();
+    localStorage.removeItem("token");
+    localStorage.removeItem("environment_id");
+    localStorage.removeItem("environment");
+
     navigate("/login");
   };
 
-  const handleEnvironmentChange = (e) => {
-    const selectedEnvironment = e.target.value;
-
-    setEnvironment(selectedEnvironment);
-
-    localStorage.setItem(
-      "environment",
-      selectedEnvironment
-    );
-
-    // Refresh current page so data can reload
-    window.location.reload();
-  };
+  const navClass = ({ isActive }) =>
+    `sidebar-link ${isActive ? "active" : ""}`;
 
   return (
-    <nav
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "15px 30px",
-        background: "#1e293b",
-        color: "white",
-        flexWrap: "wrap",
-        gap: "15px"
-      }}
-    >
+    <aside className="sidebar">
 
-      {/* Logo */}
-      <h2 style={{ margin: 0 }}>
-        🚀 Feature Deployment
-      </h2>
+      {/* ==============================
+          BRAND
+      ============================== */}
 
+      <div className="sidebar-brand">
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "18px",
-          flexWrap: "wrap"
-        }}
-      >
+        <div className="brand-logo">
+          🚀
+        </div>
 
-        {token ? (
-          <>
+        <div className="brand-text">
+          <div className="brand-title">
+            FeatureFlow
+          </div>
 
-            {/* Dashboard */}
-            <Link
-              to="/flags"
-              style={linkStyle}
-            >
-              Dashboard
-            </Link>
-
-
-            {/* Create Flag */}
-            <Link
-              to="/create-flag"
-              style={linkStyle}
-            >
-              ➕ Create Flag
-            </Link>
-
-
-            {/* Audit Logs */}
-            <Link
-              to="/audit"
-              style={linkStyle}
-            >
-              📋 Audit Logs
-            </Link>
-
-
-            {/* Environment Switcher */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px"
-              }}
-            >
-
-              <label
-                style={{
-                  fontSize: "14px",
-                  fontWeight: "bold"
-                }}
-              >
-                Environment:
-              </label>
-
-              <select
-                value={environment}
-                onChange={handleEnvironmentChange}
-                style={selectStyle}
-              >
-
-                <option value="Development">
-                  Development
-                </option>
-
-                <option value="Staging">
-                  Staging
-                </option>
-
-                <option value="Production">
-                  Production
-                </option>
-
-              </select>
-
-            </div>
-
-
-            {/* User */}
-            <div
-              style={{
-                marginLeft: "10px",
-                textAlign: "right"
-              }}
-            >
-
-              <div>
-                👤 {user?.username || "User"}
-              </div>
-
-              <small>
-                {user?.role || "Developer"}
-              </small>
-
-            </div>
-
-
-            {/* Logout */}
-            <button
-              onClick={handleLogout}
-              style={logoutButton}
-            >
-              Logout
-            </button>
-
-          </>
-        ) : (
-          <>
-
-            {/* Login */}
-            <Link
-              to="/login"
-              style={linkStyle}
-            >
-              Login
-            </Link>
-
-
-            {/* Signup */}
-            <Link
-              to="/signup"
-              style={linkStyle}
-            >
-              Signup
-            </Link>
-
-          </>
-        )}
+          <div className="brand-subtitle">
+            Intelligent Deployment
+          </div>
+        </div>
 
       </div>
 
-    </nav>
+
+      {/* ==============================
+          NAVIGATION
+      ============================== */}
+
+      <div className="sidebar-section">
+
+        <div className="sidebar-label">
+          MAIN
+        </div>
+
+
+        <NavLink
+          to="/flags"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+            ◈
+          </span>
+
+          <span>
+            Feature Flags
+          </span>
+        </NavLink>
+
+
+        <NavLink
+          to="/create-flag"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+            ＋
+          </span>
+
+          <span>
+            Create Flag
+          </span>
+        </NavLink>
+
+
+        <NavLink
+          to="/evaluate"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+            ◎
+          </span>
+
+          <span>
+            Evaluate
+          </span>
+        </NavLink>
+
+
+        <NavLink
+          to="/audit"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+            ≡
+          </span>
+
+          <span>
+            Audit Logs
+          </span>
+        </NavLink>
+
+      </div>
+
+
+      {/* ==============================
+          MANAGEMENT
+      ============================== */}
+
+      <div className="sidebar-section">
+
+        <div className="sidebar-label">
+          MANAGEMENT
+        </div>
+
+        <NavLink
+          to="/"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+            ⌂
+          </span>
+
+          <span>
+            Home
+          </span>
+        </NavLink>
+
+      </div>
+
+
+      {/* ==============================
+          BOTTOM
+      ============================== */}
+
+      <div className="sidebar-bottom">
+
+        <div className="sidebar-status">
+
+          <span className="status-online"></span>
+
+          <div>
+            <strong>
+              System Online
+            </strong>
+
+            <small>
+              Deployment ready
+            </small>
+          </div>
+
+        </div>
+
+
+        <button
+          className="sidebar-logout"
+          onClick={handleLogout}
+        >
+          <span>
+            ↪
+          </span>
+
+          Logout
+        </button>
+
+      </div>
+
+    </aside>
   );
 }
-
-
-const linkStyle = {
-  color: "white",
-  textDecoration: "none",
-  fontWeight: "500"
-};
-
-
-const selectStyle = {
-  padding: "7px 10px",
-  borderRadius: "6px",
-  border: "1px solid #cbd5e1",
-  background: "white",
-  color: "#1e293b",
-  cursor: "pointer",
-  fontWeight: "500"
-};
-
-
-const logoutButton = {
-  background: "#dc2626",
-  color: "white",
-  border: "none",
-  padding: "8px 15px",
-  borderRadius: "6px",
-  cursor: "pointer"
-};
-
 
 export default Navbar;

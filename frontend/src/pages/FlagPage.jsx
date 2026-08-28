@@ -1,31 +1,43 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import {
+  useEffect,
+  useMemo,
+  useState
+} from "react";
+
+import {
+  Link
+} from "react-router-dom";
 
 import api from "../services/api";
 
 
 function FlagPage() {
 
-
   const [flags, setFlags] = useState([]);
 
-  const [environments, setEnvironments] = useState([]);
+  const [environments, setEnvironments] =
+    useState([]);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
 
+  const [selectedEnvironment, setSelectedEnvironment] =
+    useState(
+      Number(
+        localStorage.getItem(
+          "environment_id"
+        )
+      ) || 1
+    );
 
 
   useEffect(() => {
-
     fetchData();
-
   }, []);
-
-
-
 
 
   const fetchData = async () => {
@@ -34,39 +46,96 @@ function FlagPage() {
 
       setLoading(true);
 
+      const [
+        flagResponse,
+        envResponse
+      ] = await Promise.all([
+        api.get("/flags/"),
+        api.get("/environments/")
+      ]);
 
-      const flagResponse =
-        await api.get("/flags/");
+
+      const allFlags =
+        flagResponse.data || [];
+
+      const allEnvironments =
+        envResponse.data || [];
 
 
-      const envResponse =
-        await api.get("/environments/");
+      const savedEnvironmentId =
+        Number(
+          localStorage.getItem(
+            "environment_id"
+          )
+        ) || 1;
 
 
+      const environmentExists =
+        allEnvironments.some(
+          (environment) =>
+            Number(environment.id) ===
+            savedEnvironmentId
+        );
 
-      setFlags(
-        flagResponse.data
-      );
 
+      const environmentId =
+        environmentExists
+          ? savedEnvironmentId
+          : allEnvironments.length > 0
+          ? allEnvironments[0].id
+          : 1;
+
+
+      const filteredFlags =
+        allFlags.filter(
+          (flag) =>
+            Number(flag.environment_id) ===
+            Number(environmentId)
+        );
+
+
+      setFlags(filteredFlags);
 
       setEnvironments(
-        envResponse.data
+        allEnvironments
+      );
+
+      setSelectedEnvironment(
+        Number(environmentId)
       );
 
 
-    }
+      localStorage.setItem(
+        "environment_id",
+        environmentId
+      );
 
-    catch(error){
+
+      const selectedEnvironmentObject =
+        allEnvironments.find(
+          (environment) =>
+            Number(environment.id) ===
+            Number(environmentId)
+        );
+
+
+      if (selectedEnvironmentObject) {
+
+        localStorage.setItem(
+          "environment",
+          selectedEnvironmentObject.name
+        );
+
+      }
+
+    } catch (error) {
 
       console.error(
         "Failed to load dashboard",
         error
       );
 
-    }
-
-
-    finally{
+    } finally {
 
       setLoading(false);
 
@@ -75,20 +144,14 @@ function FlagPage() {
   };
 
 
-
-
-
-  // Environment id -> name
-
   const getEnvironmentName = (id) => {
-
 
     const environment =
       environments.find(
         (env) =>
-          env.id === id
+          Number(env.id) ===
+          Number(id)
       );
-
 
     return environment
       ? environment.name
@@ -97,52 +160,40 @@ function FlagPage() {
   };
 
 
-
-
-
-
   const deleteFlag = async (key) => {
 
-
-    const confirmDelete =
+    const confirmed =
       window.confirm(
-        "Delete this flag?"
+        `Are you sure you want to delete "${key}"?`
       );
 
 
-
-    if(!confirmDelete)
+    if (!confirmed) {
       return;
+    }
 
 
-
-
-    try{
-
+    try {
 
       await api.delete(
         `/flags/${key}`
       );
 
-
-
       alert(
         "Flag deleted successfully"
       );
 
-
       fetchData();
 
+    } catch (error) {
 
-
-    }
-
-    catch(error){
-
-      console.error(error);
-
+      console.error(
+        "Delete failed:",
+        error
+      );
 
       alert(
+        error.response?.data?.detail ||
         "Delete failed"
       );
 
@@ -151,597 +202,560 @@ function FlagPage() {
   };
 
 
-
-
-
-
   const enabledCount =
     flags.filter(
-      (flag)=>flag.enabled
+      (flag) => flag.enabled
     ).length;
 
 
-
-
   const disabledCount =
-    flags.length - enabledCount;
-
-
-
-
+    flags.length -
+    enabledCount;
 
 
   const filteredFlags =
-    flags.filter(
+    useMemo(() => {
 
-      (flag)=>
+      const query =
+        search
+          .toLowerCase()
+          .trim();
 
-        flag.flag_key
-        .toLowerCase()
-        .includes(
-          search.toLowerCase()
-        )
 
+      if (!query) {
+        return flags;
+      }
+
+
+      return flags.filter(
+        (flag) => {
+
+          const key =
+            flag.flag_key
+              ?.toLowerCase() || "";
+
+          const owner =
+            flag.owner_team
+              ?.toLowerCase() || "";
+
+          const type =
+            flag.type
+              ?.toLowerCase() || "";
+
+          const environment =
+            getEnvironmentName(
+              flag.environment_id
+            ).toLowerCase();
+
+
+          return (
+            key.includes(query) ||
+            owner.includes(query) ||
+            type.includes(query) ||
+            environment.includes(query)
+          );
+
+        }
+      );
+
+    }, [
+      flags,
+      search,
+      environments
+    ]);
+
+
+  const selectedEnvironmentName =
+    getEnvironmentName(
+      selectedEnvironment
     );
 
 
-
-
-
-  if(loading){
-
+  if (loading) {
 
     return (
 
-      <h2
-        style={{
-          padding:"30px"
-        }}
-      >
+      <main className="dashboard-main">
 
-        Loading Dashboard...
+        <div className="dashboard-loading">
 
-      </h2>
+          <div className="loading-spinner"></div>
+
+          <h2>
+            Loading Feature Flags
+          </h2>
+
+          <p>
+            Fetching your deployment
+            configuration...
+          </p>
+
+        </div>
+
+      </main>
 
     );
 
   }
-    return (
-
-    <div
-
-      style={{
-
-        padding:"30px",
-
-        background:"#f1f5f9",
-
-        minHeight:"100vh"
-
-      }}
-
-    >
-
-
-      <h1>
-        🚀 Feature Flag Dashboard
-      </h1>
-
-
-
-
-
-      <div
-
-        style={{
-
-          display:"flex",
-
-          gap:"20px",
-
-          margin:"25px 0",
-
-          flexWrap:"wrap"
-
-        }}
-
-      >
-
-
-        <Card
-          title="Total Flags"
-          value={flags.length}
-        />
-
-
-        <Card
-          title="Enabled"
-          value={enabledCount}
-        />
-
-
-        <Card
-          title="Disabled"
-          value={disabledCount}
-        />
-
-
-        <Card
-          title="Environments"
-          value={environments.length}
-        />
-
-
-      </div>
-
-
-
-
-
-
-      <div
-
-        style={{
-
-          display:"flex",
-
-          justifyContent:"space-between",
-
-          marginBottom:"20px"
-
-        }}
-
-      >
-
-
-
-        <input
-
-          placeholder="Search Flag..."
-
-          value={search}
-
-          onChange={
-            (e)=>
-            setSearch(
-              e.target.value
-            )
-          }
-
-          style={inputStyle}
-
-        />
-
-
-
-
-        <Link to="/create-flag">
-
-
-          <button
-
-            style={createButton}
-
-          >
-
-            + Create Flag
-
-
-          </button>
-
-
-        </Link>
-
-
-
-      </div>
-
-
-
-
-
-
-
-      {
-
-        filteredFlags.length === 0 ?
-
-
-        (
-
-          <div
-
-            style={{
-
-              background:"white",
-
-              padding:"30px",
-
-              borderRadius:"10px"
-
-            }}
-
-          >
-
-            <h3>
-              No flags found 🚩
-            </h3>
-
-
-            <p>
-              Create your first feature flag.
-            </p>
-
-
-          </div>
-
-        )
-
-        :
-
-
-
-        (
-
-        <table
-
-          style={{
-
-            width:"100%",
-
-            background:"white",
-
-            borderCollapse:"collapse"
-
-          }}
-
-        >
-
-
-          <thead
-
-            style={{
-
-              background:"#1e293b",
-
-              color:"white"
-
-            }}
-
-          >
-
-            <tr>
-
-              <th style={th}>
-                Flag Key
-              </th>
-
-
-              <th style={th}>
-                Type
-              </th>
-
-
-              <th style={th}>
-                Environment
-              </th>
-
-
-              <th style={th}>
-                Status
-              </th>
-
-
-              <th style={th}>
-                Owner
-              </th>
-
-
-              <th style={th}>
-                Actions
-              </th>
-
-
-            </tr>
-
-
-          </thead>
-
-
-
-
-
-          <tbody>
-
-
-          {
-
-            filteredFlags.map(
-
-              (flag)=>(
-
-
-              <tr key={flag.id}>
-
-
-                <td style={td}>
-
-
-                  <Link
-
-                    to={`/flag/${flag.flag_key}`}
-
-                  >
-
-                    {flag.flag_key}
-
-                  </Link>
-
-
-                </td>
-
-
-
-
-                <td style={td}>
-                  {flag.type}
-                </td>
-
-
-
-
-                <td style={td}>
-
-                  {
-                    getEnvironmentName(
-                      flag.environment_id
-                    )
-                  }
-
-                </td>
-
-
-
-
-
-                <td style={td}>
-
-                  {
-
-                    flag.enabled
-
-                    ?
-
-                    "🟢 Enabled"
-
-                    :
-
-                    "🔴 Disabled"
-
-                  }
-
-                </td>
-
-
-
-
-
-                <td style={td}>
-                  {flag.owner_team}
-                </td>
-
-
-
-
-
-                <td style={td}>
-
-
-                  <Link
-
-                    to={`/edit-flag/${flag.flag_key}`}
-
-                  >
-
-                    <button style={editButton}>
-
-                      ✏ Edit
-
-                    </button>
-
-
-                  </Link>
-
-
-
-
-
-                  <button
-
-                    onClick={() =>
-                      deleteFlag(
-                        flag.flag_key
-                      )
-                    }
-
-                    style={deleteButton}
-
-                  >
-
-                    🗑 Delete
-
-                  </button>
-
-
-                </td>
-
-
-              </tr>
-
-
-              )
-
-            )
-
-          }
-
-
-          </tbody>
-
-
-        </table>
-
-
-        )
-
-      }
-
-
-
-    </div>
-
-
-  );
-
-}
-
-
-
-
-
-
-function Card({title,value}){
 
 
   return (
 
+    <main className="dashboard-main">
+
+      <div className="dashboard-container">
+
+        {/* HEADER */}
+
+        <header className="dashboard-header">
+
+          <div className="dashboard-heading">
+
+            <div className="eyebrow">
+              FEATURE MANAGEMENT
+            </div>
+
+            <h1>
+              Feature Flags
+            </h1>
+
+            <p>
+              Manage, monitor and control
+              feature releases across your
+              environments.
+            </p>
+
+            <div className="environment-pill">
+
+              <span>
+                ●
+              </span>
+
+              <span>
+                Environment
+              </span>
+
+              <strong>
+                {selectedEnvironmentName}
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          <Link
+            to="/create-flag"
+            className="primary-button"
+          >
+
+            <span>
+              +
+            </span>
+
+            Create Flag
+
+          </Link>
+
+        </header>
+
+
+        {/* STATISTICS */}
+
+        <section className="stats-grid">
+
+          <StatCard
+            title="Total Flags"
+            value={flags.length}
+            description="Flags in selected environment"
+            icon="⚑"
+            variant="blue"
+          />
+
+          <StatCard
+            title="Enabled"
+            value={enabledCount}
+            description="Currently active"
+            icon="✓"
+            variant="green"
+          />
+
+          <StatCard
+            title="Disabled"
+            value={disabledCount}
+            description="Currently inactive"
+            icon="×"
+            variant="red"
+          />
+
+          <StatCard
+            title="Environments"
+            value={environments.length}
+            description="Available environments"
+            icon="◈"
+            variant="purple"
+          />
+
+        </section>
+
+
+        {/* MAIN FLAGS CARD */}
+
+        <section className="flags-card">
+
+          <div className="flags-toolbar">
+
+            <div>
+
+              <div className="section-eyebrow">
+                CONFIGURATION
+              </div>
+
+              <h2>
+                All Feature Flags
+              </h2>
+
+              <span className="flags-count">
+                {filteredFlags.length}{" "}
+                {filteredFlags.length === 1
+                  ? "flag"
+                  : "flags"}
+              </span>
+
+            </div>
+
+
+            <div className="toolbar-actions">
+
+              <div className="search-wrapper">
+
+                <span className="search-icon">
+                  ⌕
+                </span>
+
+                <input
+                  type="text"
+                  placeholder="Search flags, owners..."
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                  className="search-input"
+                />
+
+                {search && (
+                  <button
+                    className="clear-search"
+                    onClick={() =>
+                      setSearch("")
+                    }
+                  >
+                    ×
+                  </button>
+                )}
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          {/* EMPTY */}
+
+          {filteredFlags.length === 0 ? (
+
+            <div className="empty-state">
+
+              <div className="empty-icon">
+                ⚑
+              </div>
+
+              <h3>
+                No flags found
+              </h3>
+
+              <p>
+                {search
+                  ? "Try a different search term."
+                  : `No feature flags exist in the ${selectedEnvironmentName} environment.`
+                }
+              </p>
+
+
+              {!search && (
+
+                <Link
+                  to="/create-flag"
+                  className="primary-button"
+                >
+                  + Create your first flag
+                </Link>
+
+              )}
+
+            </div>
+
+          ) : (
+
+            <div className="table-wrapper">
+
+              <table className="flags-table">
+
+                <thead>
+
+                  <tr>
+
+                    <th>
+                      FEATURE FLAG
+                    </th>
+
+                    <th>
+                      TYPE
+                    </th>
+
+                    <th>
+                      ENVIRONMENT
+                    </th>
+
+                    <th>
+                      STATUS
+                    </th>
+
+                    <th>
+                      OWNER
+                    </th>
+
+                    <th>
+                      ACTIONS
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                  {filteredFlags.map(
+                    (flag) => (
+
+                      <tr
+                        key={flag.id}
+                      >
+
+                        <td>
+
+                          <Link
+                            to={`/flag/${flag.flag_key}`}
+                            className="flag-name"
+                          >
+                            {flag.flag_key ||
+                              "Unnamed flag"}
+                          </Link>
+
+                          <div className="flag-id">
+                            ID #{flag.id}
+                          </div>
+
+                        </td>
+
+
+                        <td>
+
+                          <span className="type-badge">
+                            {flag.type || "unknown"}
+                          </span>
+
+                        </td>
+
+
+                        <td>
+
+                          <span className="environment-badge">
+
+                            <span>
+                              ●
+                            </span>
+
+                            {getEnvironmentName(
+                              flag.environment_id
+                            )}
+
+                          </span>
+
+                        </td>
+
+
+                        <td>
+
+                          {flag.enabled ? (
+
+                            <span className="status-badge status-enabled">
+
+                              <span className="status-dot"></span>
+
+                              Enabled
+
+                            </span>
+
+                          ) : (
+
+                            <span className="status-badge status-disabled">
+
+                              <span className="status-dot"></span>
+
+                              Disabled
+
+                            </span>
+
+                          )}
+
+                        </td>
+
+
+                        <td>
+
+                          <div className="owner-cell">
+
+                            <div className="owner-avatar">
+
+                              {(
+                                flag.owner_team ||
+                                "U"
+                              )
+                                .charAt(0)
+                                .toUpperCase()}
+
+                            </div>
+
+                            <span>
+                              {flag.owner_team ||
+                                "Unassigned"}
+                            </span>
+
+                          </div>
+
+                        </td>
+
+
+                        <td>
+
+                          <div className="action-buttons">
+
+                            <Link
+                              to={`/edit-flag/${flag.flag_key}`}
+                              className="edit-button"
+                            >
+                              Edit
+                            </Link>
+
+                            <button
+                              onClick={() =>
+                                deleteFlag(
+                                  flag.flag_key
+                                )
+                              }
+                              className="delete-button"
+                            >
+                              Delete
+                            </button>
+
+                          </div>
+
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+
+        {/* FOOTER */}
+
+        <footer className="dashboard-footer">
+
+          <span>
+            Intelligent Feature Deployment
+          </span>
+
+          <span>
+            {flags.length} flags ·{" "}
+            {environments.length} environments
+          </span>
+
+        </footer>
+
+      </div>
+
+    </main>
+
+  );
+
+}
+
+
+/* =====================================================
+   STAT CARD
+===================================================== */
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon,
+  variant
+}) {
+
+  return (
+
     <div
-
-      style={{
-
-        background:"#2563eb",
-
-        color:"white",
-
-        padding:"20px",
-
-        borderRadius:"10px",
-
-        width:"180px"
-
-      }}
-
+      className={`stat-card ${variant}`}
     >
 
-      <h3>
-        {title}
-      </h3>
+      <div className="stat-card-top">
 
-      <h1>
-        {value}
-      </h1>
+        <div>
 
+          <span className="stat-title">
+            {title}
+          </span>
+
+          <div className="stat-value">
+            {value}
+          </div>
+
+        </div>
+
+
+        <div className="stat-icon">
+          {icon}
+        </div>
+
+      </div>
+
+
+      <div className="stat-description">
+        {description}
+      </div>
 
     </div>
 
   );
 
-
 }
-
-
-
-
-
-
-const inputStyle={
-
-  padding:"10px",
-
-  width:"280px",
-
-  borderRadius:"8px",
-
-  border:"1px solid #ccc"
-
-};
-
-
-
-
-const createButton={
-
-  background:"#16a34a",
-
-  color:"white",
-
-  border:"none",
-
-  padding:"10px 18px",
-
-  borderRadius:"8px",
-
-  cursor:"pointer"
-
-};
-
-
-
-
-const th={
-
-  padding:"12px"
-
-};
-
-
-
-
-const td={
-
-  padding:"12px",
-
-  borderBottom:"1px solid #ddd"
-
-};
-
-
-
-
-const editButton={
-
-  background:"#2563eb",
-
-  color:"white",
-
-  border:"none",
-
-  padding:"8px",
-
-  borderRadius:"5px",
-
-  marginRight:"8px"
-
-};
-
-
-
-
-const deleteButton={
-
-  background:"#dc2626",
-
-  color:"white",
-
-  border:"none",
-
-  padding:"8px",
-
-  borderRadius:"5px"
-
-};
-
-
 
 
 export default FlagPage;
