@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException
+)
 
 from sqlalchemy.orm import Session
 
@@ -26,9 +30,9 @@ router = APIRouter(
 )
 
 
-# ---------------------------------------------------
-# Create Targeting Rule
-# ---------------------------------------------------
+# =========================================================
+# CREATE TARGETING RULE
+# =========================================================
 
 @router.post(
     "/",
@@ -39,15 +43,24 @@ def create_targeting_rule(
     db: Session = Depends(get_db)
 ):
 
-    return create_rule(
-        db,
-        rule
+    result = create_rule(
+        db=db,
+        rule=rule
     )
 
+    if result == "FLAG_NOT_FOUND":
 
-# ---------------------------------------------------
-# Get Rules For Flag
-# ---------------------------------------------------
+        raise HTTPException(
+            status_code=404,
+            detail="Flag not found"
+        )
+
+    return result
+
+
+# =========================================================
+# GET RULES FOR FLAG
+# =========================================================
 
 @router.get(
     "/flag/{flag_id}",
@@ -59,14 +72,14 @@ def read_rules(
 ):
 
     return get_rules_by_flag(
-        db,
-        flag_id
+        db=db,
+        flag_id=flag_id
     )
 
 
-# ---------------------------------------------------
-# Get Available Groups
-# ---------------------------------------------------
+# =========================================================
+# GET AVAILABLE GROUPS
+# =========================================================
 
 @router.get(
     "/groups"
@@ -80,9 +93,9 @@ def read_groups(
     }
 
 
-# ---------------------------------------------------
-# Delete Targeting Rule
-# ---------------------------------------------------
+# =========================================================
+# DELETE TARGETING RULE
+# =========================================================
 
 @router.delete(
     "/{rule_id}"
@@ -93,8 +106,8 @@ def remove_rule(
 ):
 
     deleted = delete_rule(
-        db,
-        rule_id
+        db=db,
+        rule_id=rule_id
     )
 
     if not deleted:

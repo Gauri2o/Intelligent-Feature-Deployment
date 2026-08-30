@@ -1,21 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
 import api from "../services/api";
 
+
 function AuditLogs() {
+
+  // =========================================================
+  // STATE
+  // =========================================================
+
   const [logs, setLogs] = useState([]);
+
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] =
-    useState(false);
+
+  const [refreshing, setRefreshing] = useState(false);
+
   const [search, setSearch] = useState("");
+
+  const [actorFilter, setActorFilter] = useState("");
+
+  const [flagFilter, setFlagFilter] = useState("");
+
+  const [startDate, setStartDate] = useState("");
+
+  const [endDate, setEndDate] = useState("");
+
   const [error, setError] = useState("");
+
+  const [selectedLog, setSelectedLog] = useState(null);
+
+
+  // =========================================================
+  // FETCH LOGS
+  // =========================================================
 
   useEffect(() => {
     fetchLogs();
   }, []);
 
+
   const fetchLogs = async (isRefresh = false) => {
+
     try {
+
       if (isRefresh) {
         setRefreshing(true);
       } else {
@@ -24,31 +52,139 @@ function AuditLogs() {
 
       setError("");
 
+      const params = {};
+
+      if (actorFilter.trim()) {
+        params.user = actorFilter.trim();
+      }
+
+      if (flagFilter.trim()) {
+        params.flag_key = flagFilter.trim();
+      }
+
+      if (startDate) {
+        params.start_date = startDate;
+      }
+
+      if (endDate) {
+        params.end_date = endDate;
+      }
+
       const response = await api.get(
-        "/audit-logs/audit/"
+        "/audit-logs/audit/",
+        {
+          params
+        }
       );
 
-      setLogs(response.data || []);
+      setLogs(
+        Array.isArray(response.data)
+          ? response.data
+          : []
+      );
+
     } catch (err) {
-      console.error(err);
+
+      console.error(
+        "Failed to fetch audit logs:",
+        err
+      );
 
       setError(
         "Failed to load audit logs. Please try again."
       );
+
     } finally {
+
       setLoading(false);
+
       setRefreshing(false);
     }
+
   };
 
-  const filteredLogs = useMemo(() => {
-    const query = search
-      .toLowerCase()
-      .trim();
 
-    if (!query) return logs;
+  // =========================================================
+  // CLEAR FILTERS
+  // =========================================================
+
+  const clearFilters = () => {
+
+    setSearch("");
+
+    setActorFilter("");
+
+    setFlagFilter("");
+
+    setStartDate("");
+
+    setEndDate("");
+
+  };
+
+
+  // =========================================================
+  // MODAL ESCAPE / SCROLL LOCK
+  // =========================================================
+
+  useEffect(() => {
+
+    if (!selectedLog) {
+
+      document.body.style.overflow = "";
+
+      return;
+    }
+
+    document.body.style.overflow = "hidden";
+
+
+    const handleKeyDown = (event) => {
+
+      if (event.key === "Escape") {
+        setSelectedLog(null);
+      }
+
+    };
+
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+
+    return () => {
+
+      document.body.style.overflow = "";
+
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+
+    };
+
+  }, [selectedLog]);
+
+
+  // =========================================================
+  // LOCAL SEARCH
+  // =========================================================
+
+  const filteredLogs = useMemo(() => {
+
+    const query =
+      search.toLowerCase().trim();
+
+
+    if (!query) {
+      return logs;
+    }
+
 
     return logs.filter((log) => {
+
       const action =
         log.action?.toLowerCase() || "";
 
@@ -63,50 +199,585 @@ function AuditLogs() {
         flag.includes(query) ||
         user.includes(query)
       );
+
     });
+
   }, [logs, search]);
 
+
+  // =========================================================
+  // ACTION CLASS
+  // =========================================================
+
   const getActionClass = (action) => {
+
     const value =
       action?.toLowerCase() || "";
+
 
     if (
       value.includes("delete") ||
       value.includes("remove")
     ) {
+
       return "audit-action delete";
     }
+
 
     if (
       value.includes("create") ||
       value.includes("add")
     ) {
+
       return "audit-action create";
     }
+
+
+    if (
+      value.includes("enable")
+    ) {
+
+      return "audit-action create";
+    }
+
+
+    if (
+      value.includes("disable")
+    ) {
+
+      return "audit-action delete";
+    }
+
 
     if (
       value.includes("update") ||
       value.includes("edit")
     ) {
+
       return "audit-action update";
     }
 
-    if (value.includes("evaluat")) {
+
+    if (
+      value.includes("evaluat")
+    ) {
+
       return "audit-action evaluate";
     }
+
 
     return "audit-action default";
   };
 
+
+  // =========================================================
+  // INITIAL
+  // =========================================================
+
   const getInitial = (user) => {
+
     return (
       user?.charAt(0)?.toUpperCase() ||
       "A"
     );
+
   };
 
+
+  // =========================================================
+  // PARSE AUDIT VALUE
+  // =========================================================
+  //
+  // Handles:
+  // 1. Normal object
+  // 2. JSON string
+  // 3. Double-encoded JSON
+  // 4. Triple-encoded JSON
+  //
+  // This is important because before_value / after_value
+  // may come from PostgreSQL as encoded JSON strings.
+  // =========================================================
+
+  const parseAuditValue = (value) => {
+
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+
+      return null;
+    }
+
+
+    // Already an object
+    if (
+      typeof value === "object"
+    ) {
+
+      return value;
+    }
+
+
+    // Non-string primitive
+    if (
+      typeof value !== "string"
+    ) {
+
+      return value;
+    }
+
+
+    let parsed = value;
+
+
+    // Try parsing multiple levels of JSON encoding
+    for (let i = 0; i < 3; i++) {
+
+      if (
+        typeof parsed !== "string"
+      ) {
+        break;
+      }
+
+
+      const trimmed =
+        parsed.trim();
+
+
+      if (!trimmed) {
+        return null;
+      }
+
+
+      try {
+
+        const next =
+          JSON.parse(trimmed);
+
+
+        parsed = next;
+
+      } catch {
+
+        break;
+      }
+
+    }
+
+
+    return parsed;
+
+  };
+
+
+  // =========================================================
+  // FORMAT VALUE
+  // =========================================================
+
+  const formatValue = (value) => {
+
+    if (
+      value === null ||
+      value === undefined
+    ) {
+
+      return "—";
+    }
+
+
+    if (
+      typeof value === "boolean"
+    ) {
+
+      return value
+        ? "true"
+        : "false";
+    }
+
+
+    if (
+      typeof value === "object"
+    ) {
+
+      return JSON.stringify(
+        value,
+        null,
+        2
+      );
+    }
+
+
+    return String(value);
+  };
+
+
+  // =========================================================
+  // FORMAT FIELD NAME
+  // =========================================================
+
+  const formatFieldName = (field) => {
+
+    return field
+      .replace(/_/g, " ")
+      .replace(
+        /\b\w/g,
+        (char) =>
+          char.toUpperCase()
+      );
+
+  };
+
+
+  // =========================================================
+  // GET CHANGED FIELDS
+  // =========================================================
+
+  const getChangedFields = (log) => {
+
+    const before =
+      parseAuditValue(
+        log?.before_value
+      );
+
+    const after =
+      parseAuditValue(
+        log?.after_value
+      );
+
+
+    if (
+      !before ||
+      !after ||
+      typeof before !== "object" ||
+      typeof after !== "object" ||
+      Array.isArray(before) ||
+      Array.isArray(after)
+    ) {
+
+      return [];
+    }
+
+
+    const allKeys =
+      Array.from(
+        new Set([
+          ...Object.keys(before),
+          ...Object.keys(after),
+        ])
+      );
+
+
+    return allKeys
+      .filter((key) => {
+
+        return (
+          JSON.stringify(
+            before[key]
+          ) !==
+          JSON.stringify(
+            after[key]
+          )
+        );
+
+      })
+      .map((key) => ({
+
+        key,
+
+        before: before[key],
+
+        after: after[key],
+
+      }));
+
+  };
+
+
+  // =========================================================
+  // DIFF INFORMATION
+  // =========================================================
+
+  const getDiffInfo = (log) => {
+
+    const action =
+      log?.action?.toUpperCase() || "";
+
+
+    const before =
+      parseAuditValue(
+        log?.before_value
+      );
+
+
+    const after =
+      parseAuditValue(
+        log?.after_value
+      );
+
+
+    const changedFields =
+      getChangedFields(log);
+
+
+    // -------------------------------------------------------
+    // UPDATE
+    // -------------------------------------------------------
+
+    if (
+      action === "UPDATE_FLAG"
+    ) {
+
+      if (
+        changedFields.length > 0
+      ) {
+
+        return {
+
+          type: "changes",
+
+          title: "Changed Fields",
+
+          subtitle:
+            changedFields.length === 1
+              ? "1 field changed"
+              : `${changedFields.length} fields changed`,
+
+          fields: changedFields,
+
+        };
+
+      }
+
+
+      return {
+
+        type: "info",
+
+        title: "Change Information",
+
+        message:
+          "No field-level changes were detected.",
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // ENABLE
+    // -------------------------------------------------------
+
+    if (
+      action === "ENABLE_FLAG"
+    ) {
+
+      return {
+
+        type: "changes",
+
+        title: "Flag Enabled",
+
+        subtitle:
+          "The feature flag was enabled.",
+
+        fields: [
+          {
+            key: "enabled",
+
+            before:
+              before?.enabled,
+
+            after:
+              after?.enabled,
+          }
+        ],
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // DISABLE
+    // -------------------------------------------------------
+
+    if (
+      action === "DISABLE_FLAG"
+    ) {
+
+      return {
+
+        type: "changes",
+
+        title: "Flag Disabled",
+
+        subtitle:
+          "The feature flag was disabled.",
+
+        fields: [
+          {
+            key: "enabled",
+
+            before:
+              before?.enabled,
+
+            after:
+              after?.enabled,
+          }
+        ],
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // CREATE FLAG
+    // -------------------------------------------------------
+
+    if (
+      action === "CREATE_FLAG"
+    ) {
+
+      return {
+
+        type: "created",
+
+        title: "Flag Created",
+
+        message:
+          "This feature flag was created with the following configuration.",
+
+        after,
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // DELETE FLAG
+    // -------------------------------------------------------
+
+    if (
+      action === "DELETE_FLAG"
+    ) {
+
+      return {
+
+        type: "deleted",
+
+        title: "Flag Deleted",
+
+        message:
+          "This feature flag was deleted. The previous configuration is shown below.",
+
+        before,
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // ADD TARGETING RULE
+    // -------------------------------------------------------
+
+    if (
+      action ===
+      "ADD_TARGETING_RULE"
+    ) {
+
+      return {
+
+        type: "created",
+
+        title: "Targeting Rule Added",
+
+        message:
+          "The following targeting rule was added.",
+
+        after,
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // DELETE TARGETING RULE
+    // -------------------------------------------------------
+
+    if (
+      action ===
+      "DELETE_TARGETING_RULE"
+    ) {
+
+      return {
+
+        type: "deleted",
+
+        title: "Targeting Rule Deleted",
+
+        message:
+          "The following targeting rule was removed.",
+
+        before,
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // EVALUATE
+    // -------------------------------------------------------
+
+    if (
+      action.includes("EVALUATE")
+    ) {
+
+      return {
+
+        type: "evaluation",
+
+        title: "Flag Evaluation",
+
+        message:
+          "This audit entry records a feature flag evaluation. There is no configuration diff for this action.",
+
+      };
+
+    }
+
+
+    // -------------------------------------------------------
+    // DEFAULT
+    // -------------------------------------------------------
+
+    return {
+
+      type: "info",
+
+      title: "Activity Information",
+
+      message:
+        "No before/after configuration data is available for this audit entry.",
+
+    };
+
+  };
+
+
+  // =========================================================
+  // LOADING
+  // =========================================================
+
   if (loading) {
+
     return (
+
       <div className="workspace-page">
 
         <div className="audit-loading-card">
@@ -124,42 +795,64 @@ function AuditLogs() {
         </div>
 
       </div>
+
     );
+
   }
 
+
+  // =========================================================
+  // MAIN
+  // =========================================================
+
   return (
+
     <div className="workspace-page">
 
       <div className="workspace-container">
 
-        {/* Header */}
+
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
         <div className="workspace-header">
 
           <div>
+
             <div className="workspace-eyebrow">
               SYSTEM ACTIVITY
             </div>
 
-            <h1>Audit Logs</h1>
+            <h1>
+              Audit Logs
+            </h1>
 
             <p>
-              Track feature changes, evaluations
-              and important system activity.
+              Track feature changes,
+              targeting rules and
+              important system activity.
             </p>
+
           </div>
+
 
           <div className="header-actions">
 
             <button
-              onClick={() => fetchLogs(true)}
+              onClick={() =>
+                fetchLogs(true)
+              }
               disabled={refreshing}
               className="secondary-button"
             >
+
               {refreshing
                 ? "Refreshing..."
                 : "↻ Refresh"}
+
             </button>
+
 
             <Link
               to="/flags"
@@ -172,68 +865,325 @@ function AuditLogs() {
 
         </div>
 
+
+        {/* =================================================
+            ERROR
+        ================================================= */}
+
         {error && (
+
           <div className="audit-error">
+
             <span>
               ⚠ {error}
             </span>
 
             <button
-              onClick={() => fetchLogs()}
+              onClick={() =>
+                fetchLogs()
+              }
             >
               Retry
             </button>
+
           </div>
+
         )}
 
-        {/* Stats */}
+
+        {/* =================================================
+            FILTERS
+        ================================================= */}
+
+        <div
+          className="audit-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+
+          <div
+            style={{
+              padding: "20px"
+            }}
+          >
+
+            <div
+              className="workspace-eyebrow"
+              style={{
+                marginBottom: "8px"
+              }}
+            >
+              FILTERS
+            </div>
+
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: "18px"
+              }}
+            >
+              Audit Activity Filters
+            </h2>
+
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(2, minmax(0, 1fr))",
+                gap: "14px"
+              }}
+            >
+
+              {/* Actor */}
+
+              <div>
+
+                <label>
+                  Actor / User
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="e.g. admin"
+                  value={actorFilter}
+                  onChange={(e) =>
+                    setActorFilter(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border:
+                      "1px solid #cbd5e1"
+                  }}
+                />
+
+              </div>
+
+
+              {/* Flag */}
+
+              <div>
+
+                <label>
+                  Feature Flag
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="e.g. dark_mode"
+                  value={flagFilter}
+                  onChange={(e) =>
+                    setFlagFilter(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border:
+                      "1px solid #cbd5e1"
+                  }}
+                />
+
+              </div>
+
+
+              {/* Start Date */}
+
+              <div>
+
+                <label>
+                  Start Date
+                </label>
+
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) =>
+                    setStartDate(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border:
+                      "1px solid #cbd5e1"
+                  }}
+                />
+
+              </div>
+
+
+              {/* End Date */}
+
+              <div>
+
+                <label>
+                  End Date
+                </label>
+
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) =>
+                    setEndDate(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border:
+                      "1px solid #cbd5e1"
+                  }}
+                />
+
+              </div>
+
+            </div>
+
+
+            {/* Filter buttons */}
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "16px",
+                flexWrap: "wrap"
+              }}
+            >
+
+              <button
+                className="primary-button"
+                onClick={() =>
+                  fetchLogs()
+                }
+              >
+                Apply Filters
+              </button>
+
+
+              <button
+                className="secondary-button"
+                onClick={() => {
+
+                  clearFilters();
+
+                  setTimeout(
+                    () => fetchLogs(),
+                    0
+                  );
+
+                }}
+              >
+                Clear Filters
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        {/* =================================================
+            STATS
+        ================================================= */}
 
         <div className="audit-stats-grid">
 
           <div className="audit-stat-card">
+
             <div className="audit-stat-icon blue">
               Σ
             </div>
 
             <div>
-              <span>Total Activities</span>
-              <strong>{logs.length}</strong>
+
+              <span>
+                Total Activities
+              </span>
+
+              <strong>
+                {logs.length}
+              </strong>
+
             </div>
+
           </div>
 
+
           <div className="audit-stat-card">
+
             <div className="audit-stat-icon green">
               ✓
             </div>
 
             <div>
-              <span>Visible Results</span>
+
+              <span>
+                Visible Results
+              </span>
+
               <strong>
                 {filteredLogs.length}
               </strong>
+
             </div>
+
           </div>
 
+
           <div className="audit-stat-card">
+
             <div className="audit-stat-icon purple">
               ◷
             </div>
 
             <div>
-              <span>System Tracking</span>
-              <strong>Active</strong>
+
+              <span>
+                System Tracking
+              </span>
+
+              <strong>
+                Active
+              </strong>
+
             </div>
+
           </div>
 
         </div>
 
-        {/* Logs */}
+
+        {/* =================================================
+            AUDIT CARD
+        ================================================= */}
 
         <div className="audit-card">
+
+
+          {/* Toolbar */}
 
           <div className="audit-toolbar">
 
             <div>
+
               <h2>
                 Activity History
               </h2>
@@ -244,11 +1194,17 @@ function AuditLogs() {
                   ? "activity"
                   : "activities"}
               </span>
+
             </div>
+
+
+            {/* Search */}
 
             <div className="audit-search">
 
-              <span>⌕</span>
+              <span>
+                ⌕
+              </span>
 
               <input
                 type="text"
@@ -265,6 +1221,11 @@ function AuditLogs() {
 
           </div>
 
+
+          {/* =================================================
+              EMPTY
+          ================================================= */}
+
           {filteredLogs.length === 0 ? (
 
             <div className="audit-empty">
@@ -274,15 +1235,27 @@ function AuditLogs() {
               </div>
 
               <h3>
-                {search
+
+                {search ||
+                actorFilter ||
+                flagFilter ||
+                startDate ||
+                endDate
                   ? "No matching activity"
                   : "No activity found"}
+
               </h3>
 
               <p>
-                {search
-                  ? "Try a different search term."
+
+                {search ||
+                actorFilter ||
+                flagFilter ||
+                startDate ||
+                endDate
+                  ? "Try changing your filters."
                   : "System activity will appear here when actions are performed."}
+
               </p>
 
             </div>
@@ -294,84 +1267,166 @@ function AuditLogs() {
               <table className="audit-table">
 
                 <thead>
+
                   <tr>
-                    <th>ID</th>
-                    <th>Action</th>
-                    <th>Feature Flag</th>
-                    <th>User</th>
-                    <th>Timestamp</th>
+
+                    <th>
+                      Timestamp
+                    </th>
+
+                    <th>
+                      Actor
+                    </th>
+
+                    <th>
+                      Feature Flag
+                    </th>
+
+                    <th>
+                      Action
+                    </th>
+
+                    <th>
+                      Environment
+                    </th>
+
+                    <th>
+                      View Diff
+                    </th>
+
                   </tr>
+
                 </thead>
+
 
                 <tbody>
 
-                  {filteredLogs.map((log) => (
+                  {filteredLogs.map(
+                    (log) => (
 
-                    <tr key={log.id}>
+                      <tr
+                        key={log.id}
+                      >
 
-                      <td>
-                        <span className="audit-id">
-                          #{log.id}
-                        </span>
-                      </td>
+                        {/* Timestamp */}
 
-                      <td>
-                        <span
-                          className={getActionClass(
-                            log.action
-                          )}
-                        >
-                          <span className="action-dot" />
-                          {log.action ||
-                            "Activity"}
-                        </span>
-                      </td>
+                        <td>
 
-                      <td>
-                        <div className="audit-flag-cell">
+                          <span className="audit-time">
 
-                          <div className="audit-flag-icon">
-                            F
-                          </div>
+                            {log.timestamp
+                              ? new Date(
+                                  log.timestamp
+                                ).toLocaleString()
+                              : "—"}
 
-                          <span>
-                            {log.flag_key ||
-                              "—"}
                           </span>
 
-                        </div>
-                      </td>
+                        </td>
 
-                      <td>
-                        <div className="audit-user">
 
-                          <div className="audit-avatar">
-                            {getInitial(
-                              log.user
-                            )}
+                        {/* Actor */}
+
+                        <td>
+
+                          <div className="audit-user">
+
+                            <div className="audit-avatar">
+
+                              {getInitial(
+                                log.user
+                              )}
+
+                            </div>
+
+                            <span>
+
+                              {log.user ||
+                                "anonymous"}
+
+                            </span>
+
                           </div>
 
-                          <span>
-                            {log.user ||
-                              "anonymous"}
+                        </td>
+
+
+                        {/* Flag */}
+
+                        <td>
+
+                          <div className="audit-flag-cell">
+
+                            <div className="audit-flag-icon">
+                              F
+                            </div>
+
+                            <span>
+
+                              {log.flag_key ||
+                                "—"}
+
+                            </span>
+
+                          </div>
+
+                        </td>
+
+
+                        {/* Action */}
+
+                        <td>
+
+                          <span
+                            className={
+                              getActionClass(
+                                log.action
+                              )
+                            }
+                          >
+
+                            <span className="action-dot" />
+
+                            {log.action ||
+                              "Activity"}
+
                           </span>
 
-                        </div>
-                      </td>
+                        </td>
 
-                      <td>
-                        <span className="audit-time">
-                          {log.timestamp
-                            ? new Date(
-                                log.timestamp
-                              ).toLocaleString()
+
+                        {/* Environment */}
+
+                        <td>
+
+                          {log.environment_id
+                            ? `#${log.environment_id}`
                             : "—"}
-                        </span>
-                      </td>
 
-                    </tr>
+                        </td>
 
-                  ))}
+
+                        {/* Diff */}
+
+                        <td>
+
+                          <button
+                            className="view-diff-button"
+                            onClick={() =>
+                              setSelectedLog(
+                                log
+                              )
+                            }
+                          >
+                            View Diff
+                          </button>
+
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
 
                 </tbody>
 
@@ -383,7 +1438,13 @@ function AuditLogs() {
 
         </div>
 
+
+        {/* =================================================
+            FOOTER
+        ================================================= */}
+
         <div className="workspace-footer">
+
           <span>
             Intelligent Feature Deployment
           </span>
@@ -391,12 +1452,657 @@ function AuditLogs() {
           <span>
             Audit & Activity Tracking
           </span>
+
         </div>
 
       </div>
 
+
+      {/* =====================================================
+          MODAL
+      ===================================================== */}
+
+      {selectedLog && (
+
+        <div
+          className="audit-modal-overlay"
+          onClick={() =>
+            setSelectedLog(null)
+          }
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            overflowY: "auto",
+            background:
+              "rgba(15, 23, 42, 0.62)",
+            backdropFilter:
+              "blur(6px)"
+          }}
+        >
+
+          <div
+            className="audit-modal"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+            style={{
+              width: "100%",
+              maxWidth: "900px",
+              maxHeight:
+                "calc(100vh - 48px)",
+              overflowY: "auto",
+              background: "#ffffff",
+              borderRadius: "18px",
+              boxShadow:
+                "0 25px 70px rgba(15, 23, 42, 0.3)"
+            }}
+          >
+
+            {/* Header */}
+
+            <div
+              className="audit-modal-header"
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: "#ffffff"
+              }}
+            >
+
+              <div>
+
+                <div className="workspace-eyebrow">
+                  AUDIT DETAILS
+                </div>
+
+                <h2>
+                  Change Details
+                </h2>
+
+              </div>
+
+
+              <button
+                className="audit-modal-close"
+                onClick={() =>
+                  setSelectedLog(null)
+                }
+                aria-label="Close"
+              >
+                ×
+              </button>
+
+            </div>
+
+
+            {/* Body */}
+
+            <div className="audit-modal-body">
+
+              {/* Metadata */}
+
+              <div
+                className="audit-detail-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: "12px",
+                  marginBottom: "22px"
+                }}
+              >
+
+                <div className="audit-detail-card">
+
+                  <span>
+                    TIMESTAMP
+                  </span>
+
+                  <strong>
+                    {selectedLog.timestamp
+                      ? new Date(
+                          selectedLog.timestamp
+                        ).toLocaleString()
+                      : "—"}
+                  </strong>
+
+                </div>
+
+
+                <div className="audit-detail-card">
+
+                  <span>
+                    ACTOR
+                  </span>
+
+                  <strong>
+                    {selectedLog.user ||
+                      "anonymous"}
+                  </strong>
+
+                </div>
+
+
+                <div className="audit-detail-card">
+
+                  <span>
+                    FEATURE FLAG
+                  </span>
+
+                  <strong>
+                    {selectedLog.flag_key ||
+                      "—"}
+                  </strong>
+
+                </div>
+
+
+                <div className="audit-detail-card">
+
+                  <span>
+                    ENVIRONMENT
+                  </span>
+
+                  <strong>
+                    {selectedLog.environment_id
+                      ? `#${selectedLog.environment_id}`
+                      : "—"}
+                  </strong>
+
+                </div>
+
+
+                <div className="audit-detail-card">
+
+                  <span>
+                    ACTION
+                  </span>
+
+                  <strong>
+
+                    <span
+                      className={
+                        getActionClass(
+                          selectedLog.action
+                        )
+                      }
+                    >
+
+                      <span className="action-dot" />
+
+                      {selectedLog.action ||
+                        "Activity"}
+
+                    </span>
+
+                  </strong>
+
+                </div>
+
+              </div>
+
+
+              {/* =================================================
+                  DIFF
+              ================================================= */}
+
+              {(() => {
+
+                const diff =
+                  getDiffInfo(
+                    selectedLog
+                  );
+
+
+                return (
+
+                  <div className="diff-section">
+
+                    <div className="diff-section-header">
+
+                      <div>
+
+                        <h3>
+                          {diff.title}
+                        </h3>
+
+                        {diff.subtitle && (
+
+                          <span>
+                            {diff.subtitle}
+                          </span>
+
+                        )}
+
+                      </div>
+
+                    </div>
+
+
+                    {/* UPDATE / ENABLE / DISABLE */}
+
+                    {diff.type ===
+                      "changes" && (
+
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "14px"
+                        }}
+                      >
+
+                        {diff.fields.map(
+                          (field) => (
+
+                            <div
+                              key={field.key}
+                            >
+
+                              <div
+                                style={{
+                                  fontWeight: 700,
+                                  marginBottom:
+                                    "8px",
+                                  color:
+                                    "#172033"
+                                }}
+                              >
+                                {formatFieldName(
+                                  field.key
+                                )}
+                              </div>
+
+
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns:
+                                    "minmax(0, 1fr) 40px minmax(0, 1fr)",
+                                  gap: "10px",
+                                  alignItems:
+                                    "center"
+                                }}
+                              >
+
+                                {/* BEFORE */}
+
+                                <div
+                                  style={{
+                                    border:
+                                      "1px solid #fecaca",
+                                    background:
+                                      "#fff7f7",
+                                    borderRadius:
+                                      "10px",
+                                    overflow:
+                                      "hidden"
+                                  }}
+                                >
+
+                                  <div
+                                    style={{
+                                      padding:
+                                        "7px 10px",
+                                      background:
+                                        "#fee2e2",
+                                      color:
+                                        "#b91c1c",
+                                      fontSize:
+                                        "11px",
+                                      fontWeight: 800
+                                    }}
+                                  >
+                                    BEFORE
+                                  </div>
+
+
+                                  <pre
+                                    style={{
+                                      margin: 0,
+                                      padding:
+                                        "12px",
+                                      whiteSpace:
+                                        "pre-wrap",
+                                      overflowWrap:
+                                        "anywhere",
+                                      fontSize:
+                                        "13px"
+                                    }}
+                                  >
+                                    {formatValue(
+                                      field.before
+                                    )}
+                                  </pre>
+
+                                </div>
+
+
+                                {/* Arrow */}
+
+                                <div
+                                  style={{
+                                    textAlign:
+                                      "center",
+                                    fontSize:
+                                      "20px"
+                                  }}
+                                >
+                                  →
+                                </div>
+
+
+                                {/* AFTER */}
+
+                                <div
+                                  style={{
+                                    border:
+                                      "1px solid #bbf7d0",
+                                    background:
+                                      "#f0fdf4",
+                                    borderRadius:
+                                      "10px",
+                                    overflow:
+                                      "hidden"
+                                  }}
+                                >
+
+                                  <div
+                                    style={{
+                                      padding:
+                                        "7px 10px",
+                                      background:
+                                        "#dcfce7",
+                                      color:
+                                        "#15803d",
+                                      fontSize:
+                                        "11px",
+                                      fontWeight: 800
+                                    }}
+                                  >
+                                    AFTER
+                                  </div>
+
+
+                                  <pre
+                                    style={{
+                                      margin: 0,
+                                      padding:
+                                        "12px",
+                                      whiteSpace:
+                                        "pre-wrap",
+                                      overflowWrap:
+                                        "anywhere",
+                                      fontSize:
+                                        "13px"
+                                    }}
+                                  >
+                                    {formatValue(
+                                      field.after
+                                    )}
+                                  </pre>
+
+                                </div>
+
+                              </div>
+
+                            </div>
+
+                          )
+                        )}
+
+                      </div>
+
+                    )}
+
+
+                    {/* CREATED */}
+
+                    {diff.type ===
+                      "created" && (
+
+                      <div>
+
+                        <div
+                          style={{
+                            padding:
+                              "14px 16px",
+                            marginBottom:
+                              "14px",
+                            borderRadius:
+                              "10px",
+                            background:
+                              "#f0fdf4",
+                            border:
+                              "1px solid #bbf7d0",
+                            color:
+                              "#166534"
+                          }}
+                        >
+                          {diff.message}
+                        </div>
+
+
+                        <div
+                          style={{
+                            border:
+                              "1px solid #bbf7d0",
+                            background:
+                              "#f0fdf4",
+                            borderRadius:
+                              "10px",
+                            overflow:
+                              "hidden"
+                          }}
+                        >
+
+                          <div
+                            style={{
+                              padding:
+                                "8px 12px",
+                              background:
+                                "#dcfce7",
+                              color:
+                                "#15803d",
+                              fontSize:
+                                "11px",
+                              fontWeight: 800
+                            }}
+                          >
+                            NEW CONFIGURATION
+                          </div>
+
+
+                          <pre
+                            style={{
+                              margin: 0,
+                              padding:
+                                "14px",
+                              whiteSpace:
+                                "pre-wrap",
+                              overflowWrap:
+                                "anywhere",
+                              fontSize:
+                                "13px",
+                              lineHeight:
+                                1.5
+                            }}
+                          >
+                            {formatValue(
+                              diff.after
+                            )}
+                          </pre>
+
+                        </div>
+
+                      </div>
+
+                    )}
+
+
+                    {/* DELETED */}
+
+                    {diff.type ===
+                      "deleted" && (
+
+                      <div>
+
+                        <div
+                          style={{
+                            padding:
+                              "14px 16px",
+                            marginBottom:
+                              "14px",
+                            borderRadius:
+                              "10px",
+                            background:
+                              "#fff7ed",
+                            border:
+                              "1px solid #fed7aa",
+                            color:
+                              "#9a3412"
+                          }}
+                        >
+                          {diff.message}
+                        </div>
+
+
+                        <div
+                          style={{
+                            border:
+                              "1px solid #fecaca",
+                            background:
+                              "#fff7f7",
+                            borderRadius:
+                              "10px",
+                            overflow:
+                              "hidden"
+                          }}
+                        >
+
+                          <div
+                            style={{
+                              padding:
+                                "8px 12px",
+                              background:
+                                "#fee2e2",
+                              color:
+                                "#b91c1c",
+                              fontSize:
+                                "11px",
+                              fontWeight: 800
+                            }}
+                          >
+                            PREVIOUS CONFIGURATION
+                          </div>
+
+
+                          <pre
+                            style={{
+                              margin: 0,
+                              padding:
+                                "14px",
+                              whiteSpace:
+                                "pre-wrap",
+                              overflowWrap:
+                                "anywhere",
+                              fontSize:
+                                "13px",
+                              lineHeight:
+                                1.5
+                            }}
+                          >
+                            {formatValue(
+                              diff.before
+                            )}
+                          </pre>
+
+                        </div>
+
+                      </div>
+
+                    )}
+
+
+                    {/* INFO / EVALUATION */}
+
+                    {(
+                      diff.type ===
+                        "info" ||
+                      diff.type ===
+                        "evaluation"
+                    ) && (
+
+                      <div
+                        style={{
+                          padding:
+                            "18px",
+                          borderRadius:
+                            "10px",
+                          background:
+                            "#f8fafc",
+                          border:
+                            "1px solid #e2e8f0",
+                          color:
+                            "#475569",
+                          lineHeight:
+                            1.6
+                        }}
+                      >
+                        {diff.message}
+                      </div>
+
+                    )}
+
+                  </div>
+
+                );
+
+              })()}
+
+            </div>
+
+
+            {/* Footer */}
+
+            <div
+              className="audit-modal-footer"
+              style={{
+                position: "sticky",
+                bottom: 0,
+                background:
+                  "#ffffff"
+              }}
+            >
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setSelectedLog(null)
+                }
+              >
+                Close
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
     </div>
+
   );
+
 }
+
 
 export default AuditLogs;

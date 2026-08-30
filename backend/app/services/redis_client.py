@@ -1,6 +1,6 @@
 import json
 import redis
-
+from datetime import datetime, timezone
 
 # =====================================================
 # Redis Connection
@@ -171,3 +171,57 @@ def delete_flag_evaluation_cache(
         )
 
         return False
+    
+
+
+# =====================================================
+# EVALUATION ANALYTICS COUNTER
+# =====================================================
+
+def increment_evaluation_counter(
+    flag_key: str
+):
+    """
+    Increment evaluation count for the current UTC hour.
+
+    Redis key example:
+
+    evaluation_count:day15_test:2026083014
+    """
+
+    try:
+
+        current_hour = datetime.now(
+            timezone.utc
+        ).strftime("%Y%m%d%H")
+
+        key = (
+            f"evaluation_count:"
+            f"{flag_key}:"
+            f"{current_hour}"
+        )
+
+        count = redis_client.incr(key)
+
+        # Keep metric key available until the
+        # daily flush has a chance to process it.
+        redis_client.expire(
+            key,
+            8 * 24 * 60 * 60
+        )
+
+        print(
+            f"REDIS EVALUATION COUNT: "
+            f"{key} = {count}"
+        )
+
+        return count
+
+    except Exception as e:
+
+        print(
+            "Redis evaluation counter error:",
+            e
+        )
+
+        return None

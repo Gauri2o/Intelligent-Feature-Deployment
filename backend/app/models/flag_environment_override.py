@@ -6,7 +6,10 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     Index,
+    DateTime,
 )
+
+from sqlalchemy.sql import func
 
 from app.db.database import Base
 
@@ -43,6 +46,30 @@ class FlagEnvironmentOverride(Base):
         nullable=True
     )
 
+    # -----------------------------------------
+    # Percentage Rollout
+    # -----------------------------------------
+
+    rollout_percentage = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    # -----------------------------------------
+    # Cleanup tracking
+    # -----------------------------------------
+
+    state_changed_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # -----------------------------------------
+    # Constraints / Indexes
+    # -----------------------------------------
+
     __table_args__ = (
 
         UniqueConstraint(
@@ -59,5 +86,10 @@ class FlagEnvironmentOverride(Base):
         Index(
             "idx_override_environment_id",
             "environment_id"
+        ),
+
+        Index(
+            "idx_override_state_changed_at",
+            "state_changed_at"
         ),
     )

@@ -1,21 +1,40 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db.database import Base, engine
+from app.db.database import (
+    Base,
+    engine
+)
 
-# ---------------------------------------------------
-# Models
-# ---------------------------------------------------
 
-# Import model so SQLAlchemy registers the table
+# =========================================================
+# MODELS
+# =========================================================
+
+from app.models.environment import Environment
+
+from app.models.flag import Flag
+
+from app.models.audit_log import AuditLog
+
+from app.models.targeting_rule import TargetingRule
+
+from app.models.user_group_membership import (
+    UserGroupMembership
+)
+
 from app.models.flag_environment_override import (
     FlagEnvironmentOverride
 )
 
+from app.models.evaluation_metric import EvaluationMetric
 
-# ---------------------------------------------------
-# Routers
-# ---------------------------------------------------
+from app.models.cleanup_suggestion import CleanupSuggestion
+
+
+# =========================================================
+# ROUTERS
+# =========================================================
 
 from app.routers.flag import (
     router as flag_router
@@ -49,19 +68,23 @@ from app.routers.flag_environment_override import (
     router as flag_environment_override_router
 )
 
+from app.routers.cleanup import (
+    router as cleanup_router
+)
 
-# ---------------------------------------------------
-# Create Database Tables
-# ---------------------------------------------------
+
+# =========================================================
+# CREATE DATABASE TABLES
+# =========================================================
 
 Base.metadata.create_all(
     bind=engine
 )
 
 
-# ---------------------------------------------------
-# Create FastAPI Application
-# ---------------------------------------------------
+# =========================================================
+# FASTAPI
+# =========================================================
 
 app = FastAPI(
     title="Intelligent Feature Deployment",
@@ -73,46 +96,46 @@ app = FastAPI(
 )
 
 
-# ---------------------------------------------------
-# CORS Configuration
-# ---------------------------------------------------
+# =========================================================
+# CORS
+# =========================================================
 
 app.add_middleware(
     CORSMiddleware,
+
     allow_origins=[
         "http://localhost:5173"
     ],
+
     allow_credentials=True,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
 )
 
 
-# ---------------------------------------------------
-# Include Routers
-# ---------------------------------------------------
+# =========================================================
+# ROUTERS
+# =========================================================
 
-# Feature Flags
 app.include_router(
     flag_router,
     tags=["Feature Flags"],
 )
 
 
-# Environment Management
 app.include_router(
     environment_router,
     tags=["Environments"],
 )
 
 
-# Environment Overrides
 app.include_router(
     flag_environment_override_router,
 )
 
 
-# Audit Logs
 app.include_router(
     audit_log_router,
     prefix="/audit-logs",
@@ -120,7 +143,6 @@ app.include_router(
 )
 
 
-# Targeting Rules
 app.include_router(
     targeting_rule_router,
     prefix="/targeting-rules",
@@ -128,7 +150,6 @@ app.include_router(
 )
 
 
-# User Group Membership
 app.include_router(
     user_group_membership_router,
     prefix="/user-groups",
@@ -136,22 +157,25 @@ app.include_router(
 )
 
 
-# Authentication
 app.include_router(
     auth_router,
     tags=["Authentication"],
 )
 
 
-# Evaluation
 app.include_router(
     evaluation_router
 )
 
 
-# ---------------------------------------------------
-# Root Endpoint
-# ---------------------------------------------------
+app.include_router(
+    cleanup_router
+)
+
+
+# =========================================================
+# ROOT
+# =========================================================
 
 @app.get("/")
 def root():
@@ -166,9 +190,9 @@ def root():
     }
 
 
-# ---------------------------------------------------
-# Health Check
-# ---------------------------------------------------
+# =========================================================
+# HEALTH
+# =========================================================
 
 @app.get("/health")
 def health_check():

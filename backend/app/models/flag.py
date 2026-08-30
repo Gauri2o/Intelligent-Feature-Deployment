@@ -5,7 +5,10 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     Index,
+    DateTime,
 )
+
+from sqlalchemy.sql import func
 
 from app.db.database import Base
 
@@ -42,7 +45,7 @@ class Flag(Base):
 
     # -----------------------------------------
     # Percentage Rollout
-    # 0 = no percentage rollout
+    # 0   = no percentage rollout
     # 100 = all users
     # -----------------------------------------
 
@@ -68,6 +71,16 @@ class Flag(Base):
     )
 
     # -----------------------------------------
+    # Cleanup tracking
+    # -----------------------------------------
+
+    state_changed_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # -----------------------------------------
     # Indexes
     # -----------------------------------------
 
@@ -80,5 +93,10 @@ class Flag(Base):
         Index(
             "idx_environment_id",
             "environment_id"
+        ),
+
+        Index(
+            "idx_flag_state_changed_at",
+            "state_changed_at"
         ),
     )
