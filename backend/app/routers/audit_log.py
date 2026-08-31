@@ -36,6 +36,11 @@ def read_logs(
         default=None,
         description="Filter by feature flag key"
     ),
+    
+    environment_id: int | None = Query(
+        default=None,
+        description="Filter by environment ID"
+    ),
 
     start_date: str | None = Query(
         default=None,
@@ -85,6 +90,7 @@ def read_logs(
         db=db,
         user=user,
         flag_key=flag_key,
+        environment_id=environment_id,
         start_date=parsed_start,
         end_date=parsed_end,
     )

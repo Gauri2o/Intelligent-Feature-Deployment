@@ -256,6 +256,19 @@ function Navbar() {
           </NavLink>
 
         </div>
+        {/* Analytics */}
+        <NavLink
+          to="/analytics"
+          className={navClass}
+        >
+          <span className="sidebar-icon">
+
+          </span>
+          <span>
+            Analytics
+          </span>
+        </NavLink>
+
 
 
         {/* =================================================
@@ -523,6 +536,7 @@ function Navbar() {
     </aside>
   );
 }
+
 
 
 export default Navbar;

@@ -20,6 +20,8 @@ import EvaluateFlag from "./pages/EvaluateFlag";
 
 import AuditLogs from "./pages/AuditLogs";
 
+import Analytics from "./pages/Analytics";
+
 import EnvironmentPage from "./pages/EnvironmentPage";
 
 import CleanupSuggestions from "./pages/CleanupSuggestions";
@@ -30,6 +32,8 @@ import Settings from "./pages/Settings";
 import Navbar from "./components/Navbar";
 
 import { AuthProvider } from "./context/AuthContext";
+
+import { EnvironmentProvider } from "./context/EnvironmentContext";
 
 
 /* =========================================================
@@ -191,6 +195,15 @@ function AppLayout() {
             element={<AuditLogs />}
           />
 
+          {/* ============================================
+              ANALYTICS
+           ============================================ */}
+
+          <Route
+            path="/analytics"
+            element={<Analytics />}
+          />
+
 
           {/* ============================================
               ENVIRONMENTS
@@ -265,13 +278,17 @@ function App() {
 
     <AuthProvider>
 
-      <BrowserRouter>
+  <BrowserRouter>
 
-        <AppLayout />
+    <EnvironmentProvider>
 
-      </BrowserRouter>
+      <AppLayout />
 
-    </AuthProvider>
+    </EnvironmentProvider>
+
+  </BrowserRouter>
+
+</AuthProvider>
   );
 }
 

@@ -22,6 +22,8 @@ function AuditLogs() {
 
   const [flagFilter, setFlagFilter] = useState("");
 
+  const [environmentFilter, setEnvironmentFilter] = useState("");
+
   const [startDate, setStartDate] = useState("");
 
   const [endDate, setEndDate] = useState("");
@@ -40,7 +42,10 @@ function AuditLogs() {
   }, []);
 
 
-  const fetchLogs = async (isRefresh = false) => {
+  const fetchLogs = async (
+    isRefresh = false,
+    overrideFilters = null
+  ) => {
 
     try {
 
@@ -52,30 +57,87 @@ function AuditLogs() {
 
       setError("");
 
+
+      // -------------------------------------------------------
+      // Use current state OR explicitly supplied filters
+      // -------------------------------------------------------
+
+      const filters = overrideFilters || {
+        user: actorFilter.trim(),
+        flag_key: flagFilter.trim(),
+        environment_id: environmentFilter
+          ? Number(environmentFilter)
+          : null,
+        start_date: startDate,
+        end_date: endDate,
+      };
+
+
+      // -------------------------------------------------------
+      // Build API params
+      // -------------------------------------------------------
+
       const params = {};
 
-      if (actorFilter.trim()) {
-        params.user = actorFilter.trim();
+
+      if (filters.user) {
+
+        params.user = filters.user;
+
       }
 
-      if (flagFilter.trim()) {
-        params.flag_key = flagFilter.trim();
+
+      if (filters.flag_key) {
+
+        params.flag_key = filters.flag_key;
+
       }
 
-      if (startDate) {
-        params.start_date = startDate;
+
+      if (
+        filters.environment_id !== null &&
+        filters.environment_id !== undefined
+      ) {
+
+        params.environment_id =
+          Number(filters.environment_id);
+
       }
 
-      if (endDate) {
-        params.end_date = endDate;
+
+      if (filters.start_date) {
+
+        params.start_date =
+          filters.start_date;
+
       }
+
+
+      if (filters.end_date) {
+
+        params.end_date =
+          filters.end_date;
+
+      }
+
+
+      console.log(
+        "AUDIT LOG FILTER PARAMS:",
+        params
+      );
+
+
+      // -------------------------------------------------------
+      // API
+      // -------------------------------------------------------
 
       const response = await api.get(
         "/audit-logs/audit/",
         {
-          params
+          params,
         }
       );
+
 
       setLogs(
         Array.isArray(response.data)
@@ -99,7 +161,19 @@ function AuditLogs() {
       setLoading(false);
 
       setRefreshing(false);
+
     }
+
+  };
+
+
+  // =========================================================
+  // APPLY FILTERS
+  // =========================================================
+
+  const handleApplyFilters = () => {
+
+    fetchLogs(false);
 
   };
 
@@ -108,7 +182,22 @@ function AuditLogs() {
   // CLEAR FILTERS
   // =========================================================
 
-  const clearFilters = () => {
+  const handleClearFilters = () => {
+
+    const emptyFilters = {
+
+      user: "",
+
+      flag_key: "",
+
+      environment_id: null,
+
+      start_date: "",
+
+      end_date: "",
+
+    };
+
 
     setSearch("");
 
@@ -116,9 +205,21 @@ function AuditLogs() {
 
     setFlagFilter("");
 
+    setEnvironmentFilter("");
+
     setStartDate("");
 
     setEndDate("");
+
+
+    // Important:
+    // Fetch using cleared values immediately.
+    // Do not depend on asynchronous React state updates.
+
+    fetchLogs(
+      false,
+      emptyFilters
+    );
 
   };
 
@@ -134,7 +235,9 @@ function AuditLogs() {
       document.body.style.overflow = "";
 
       return;
+
     }
+
 
     document.body.style.overflow = "hidden";
 
@@ -142,7 +245,9 @@ function AuditLogs() {
     const handleKeyDown = (event) => {
 
       if (event.key === "Escape") {
+
         setSelectedLog(null);
+
       }
 
     };
@@ -179,7 +284,9 @@ function AuditLogs() {
 
 
     if (!query) {
+
       return logs;
+
     }
 
 
@@ -188,21 +295,51 @@ function AuditLogs() {
       const action =
         log.action?.toLowerCase() || "";
 
+
       const flag =
         log.flag_key?.toLowerCase() || "";
+
 
       const user =
         log.user?.toLowerCase() || "";
 
+
+      const environment =
+        log.environment_id
+          ? String(log.environment_id)
+          : "";
+
+
       return (
+
         action.includes(query) ||
+
         flag.includes(query) ||
-        user.includes(query)
+
+        user.includes(query) ||
+
+        environment.includes(query)
+
       );
 
     });
 
   }, [logs, search]);
+
+
+  // =========================================================
+  // ACTIVE FILTER CHECK
+  // =========================================================
+
+  const hasActiveFilters =
+    Boolean(
+      search ||
+      actorFilter ||
+      flagFilter ||
+      environmentFilter ||
+      startDate ||
+      endDate
+    );
 
 
   // =========================================================
@@ -221,6 +358,7 @@ function AuditLogs() {
     ) {
 
       return "audit-action delete";
+
     }
 
 
@@ -230,6 +368,7 @@ function AuditLogs() {
     ) {
 
       return "audit-action create";
+
     }
 
 
@@ -238,6 +377,7 @@ function AuditLogs() {
     ) {
 
       return "audit-action create";
+
     }
 
 
@@ -246,6 +386,7 @@ function AuditLogs() {
     ) {
 
       return "audit-action delete";
+
     }
 
 
@@ -255,6 +396,7 @@ function AuditLogs() {
     ) {
 
       return "audit-action update";
+
     }
 
 
@@ -263,10 +405,12 @@ function AuditLogs() {
     ) {
 
       return "audit-action evaluate";
+
     }
 
 
     return "audit-action default";
+
   };
 
 
@@ -277,8 +421,11 @@ function AuditLogs() {
   const getInitial = (user) => {
 
     return (
+
       user?.charAt(0)?.toUpperCase() ||
+
       "A"
+
     );
 
   };
@@ -286,16 +433,6 @@ function AuditLogs() {
 
   // =========================================================
   // PARSE AUDIT VALUE
-  // =========================================================
-  //
-  // Handles:
-  // 1. Normal object
-  // 2. JSON string
-  // 3. Double-encoded JSON
-  // 4. Triple-encoded JSON
-  //
-  // This is important because before_value / after_value
-  // may come from PostgreSQL as encoded JSON strings.
   // =========================================================
 
   const parseAuditValue = (value) => {
@@ -307,37 +444,39 @@ function AuditLogs() {
     ) {
 
       return null;
+
     }
 
 
-    // Already an object
     if (
       typeof value === "object"
     ) {
 
       return value;
+
     }
 
 
-    // Non-string primitive
     if (
       typeof value !== "string"
     ) {
 
       return value;
+
     }
 
 
     let parsed = value;
 
 
-    // Try parsing multiple levels of JSON encoding
     for (let i = 0; i < 3; i++) {
 
       if (
         typeof parsed !== "string"
       ) {
+
         break;
+
       }
 
 
@@ -346,7 +485,9 @@ function AuditLogs() {
 
 
       if (!trimmed) {
+
         return null;
+
       }
 
 
@@ -361,6 +502,7 @@ function AuditLogs() {
       } catch {
 
         break;
+
       }
 
     }
@@ -383,6 +525,7 @@ function AuditLogs() {
     ) {
 
       return "—";
+
     }
 
 
@@ -393,6 +536,7 @@ function AuditLogs() {
       return value
         ? "true"
         : "false";
+
     }
 
 
@@ -405,10 +549,12 @@ function AuditLogs() {
         null,
         2
       );
+
     }
 
 
     return String(value);
+
   };
 
 
@@ -440,6 +586,7 @@ function AuditLogs() {
         log?.before_value
       );
 
+
     const after =
       parseAuditValue(
         log?.after_value
@@ -456,6 +603,7 @@ function AuditLogs() {
     ) {
 
       return [];
+
     }
 
 
@@ -472,12 +620,15 @@ function AuditLogs() {
       .filter((key) => {
 
         return (
+
           JSON.stringify(
             before[key]
           ) !==
+
           JSON.stringify(
             after[key]
           )
+
         );
 
       })
@@ -582,7 +733,9 @@ function AuditLogs() {
           "The feature flag was enabled.",
 
         fields: [
+
           {
+
             key: "enabled",
 
             before:
@@ -590,7 +743,9 @@ function AuditLogs() {
 
             after:
               after?.enabled,
+
           }
+
         ],
 
       };
@@ -616,7 +771,9 @@ function AuditLogs() {
           "The feature flag was disabled.",
 
         fields: [
+
           {
+
             key: "enabled",
 
             before:
@@ -624,7 +781,9 @@ function AuditLogs() {
 
             after:
               after?.enabled,
+
           }
+
         ],
 
       };
@@ -685,8 +844,7 @@ function AuditLogs() {
     // -------------------------------------------------------
 
     if (
-      action ===
-      "ADD_TARGETING_RULE"
+      action === "ADD_TARGETING_RULE"
     ) {
 
       return {
@@ -710,8 +868,7 @@ function AuditLogs() {
     // -------------------------------------------------------
 
     if (
-      action ===
-      "DELETE_TARGETING_RULE"
+      action === "DELETE_TARGETING_RULE"
     ) {
 
       return {
@@ -917,6 +1074,7 @@ function AuditLogs() {
               FILTERS
             </div>
 
+
             <h2
               style={{
                 marginTop: 0,
@@ -996,6 +1154,54 @@ function AuditLogs() {
               </div>
 
 
+              {/* Environment */}
+
+              <div>
+
+                <label>
+                  Environment
+                </label>
+
+                <select
+                  value={environmentFilter}
+                  onChange={(e) =>
+                    setEnvironmentFilter(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    marginTop: "6px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border:
+                      "1px solid #cbd5e1",
+                    background:
+                      "#ffffff"
+                  }}
+                >
+
+                  <option value="">
+                    All Environments
+                  </option>
+
+                  <option value="1">
+                    Development
+                  </option>
+
+                  <option value="2">
+                    Staging
+                  </option>
+
+                  <option value="3">
+                    Production
+                  </option>
+
+                </select>
+
+              </div>
+
+
               {/* Start Date */}
 
               <div>
@@ -1069,8 +1275,8 @@ function AuditLogs() {
 
               <button
                 className="primary-button"
-                onClick={() =>
-                  fetchLogs()
+                onClick={
+                  handleApplyFilters
                 }
               >
                 Apply Filters
@@ -1079,16 +1285,9 @@ function AuditLogs() {
 
               <button
                 className="secondary-button"
-                onClick={() => {
-
-                  clearFilters();
-
-                  setTimeout(
-                    () => fetchLogs(),
-                    0
-                  );
-
-                }}
+                onClick={
+                  handleClearFilters
+                }
               >
                 Clear Filters
               </button>
@@ -1208,7 +1407,7 @@ function AuditLogs() {
 
               <input
                 type="text"
-                placeholder="Search action, flag or user..."
+                placeholder="Search action, flag, user or environment..."
                 value={search}
                 onChange={(e) =>
                   setSearch(
@@ -1236,11 +1435,7 @@ function AuditLogs() {
 
               <h3>
 
-                {search ||
-                actorFilter ||
-                flagFilter ||
-                startDate ||
-                endDate
+                {hasActiveFilters
                   ? "No matching activity"
                   : "No activity found"}
 
@@ -1248,11 +1443,7 @@ function AuditLogs() {
 
               <p>
 
-                {search ||
-                actorFilter ||
-                flagFilter ||
-                startDate ||
-                endDate
+                {hasActiveFilters
                   ? "Try changing your filters."
                   : "System activity will appear here when actions are performed."}
 
