@@ -5,6 +5,7 @@ function Analytics() {
   const [flags, setFlags] = useState([]);
   const [environments, setEnvironments] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [evaluationCounts, setEvaluationCounts] = useState({});
 
   const [environmentId, setEnvironmentId] = useState(
     localStorage.getItem("environment_id") || ""
@@ -41,16 +42,14 @@ function Analytics() {
       ] = await Promise.all([
         api.get("/flags/"),
         api.get("/environments/"),
-        api.get("/audit-logs/audit/", {
-          params,
-        }),
+        api.get("/audit-logs/audit/", { params }),
       ]);
 
-      setFlags(
-        Array.isArray(flagsResponse.data)
-          ? flagsResponse.data
-          : []
-      );
+      const nextFlags = Array.isArray(flagsResponse.data)
+        ? flagsResponse.data
+        : [];
+
+      setFlags(nextFlags);
 
       setEnvironments(
         Array.isArray(environmentsResponse.data)
@@ -63,6 +62,46 @@ function Analytics() {
           ? logsResponse.data
           : []
       );
+
+      // Redis analytics is the source of truth for evaluation counts.
+      // Fetch one 7-day series per flag, then aggregate it on this page.
+      const analyticsResults = await Promise.all(
+        nextFlags.map(async (flag) => {
+          try {
+            const response = await api.get(
+              `/evaluation/analytics/${encodeURIComponent(flag.flag_key)}`,
+              { params: { days: 7 } }
+            );
+
+            return {
+              flagKey: flag.flag_key,
+              counts:
+                response.data &&
+                typeof response.data.counts === "object"
+                  ? response.data.counts
+                  : {},
+            };
+          } catch (analyticsError) {
+            console.error(
+              `Failed to load analytics for ${flag.flag_key}:`,
+              analyticsError
+            );
+
+            return {
+              flagKey: flag.flag_key,
+              counts: {},
+            };
+          }
+        })
+      );
+
+      const nextEvaluationCounts = {};
+
+      analyticsResults.forEach(({ flagKey, counts }) => {
+        nextEvaluationCounts[flagKey] = counts;
+      });
+
+      setEvaluationCounts(nextEvaluationCounts);
     } catch (err) {
       console.error("Analytics load failed:", err);
 
@@ -124,17 +163,24 @@ function Analytics() {
           )
         : 0;
 
-    const evaluationLogs = logs.filter((log) =>
-      String(log.action || "")
-        .toUpperCase()
-        .includes("EVALUAT")
-    );
-
     const changeLogs = logs.filter(
       (log) =>
         !String(log.action || "")
           .toUpperCase()
           .includes("EVALUAT")
+    );
+
+    const evaluations = scopedFlags.reduce(
+      (sum, flag) =>
+        sum +
+        Object.values(
+          evaluationCounts[flag.flag_key] || {}
+        ).reduce(
+          (daySum, value) =>
+            daySum + Number(value || 0),
+          0
+        ),
+      0
     );
 
     return {
@@ -143,14 +189,14 @@ function Analytics() {
       disabled,
       rolloutFlags: rolloutFlags.length,
       averageRollout,
-      evaluations: evaluationLogs.length,
+      evaluations,
       changes: changeLogs.length,
       enabledPercent:
         total > 0
           ? Math.round((enabled / total) * 100)
           : 0,
     };
-  }, [scopedFlags, logs]);
+  }, [scopedFlags, logs, evaluationCounts]);
 
   /* =========================================================
      ACTIVITY - LAST 7 DAYS
@@ -159,46 +205,37 @@ function Analytics() {
   const activity = useMemo(() => {
     const days = [];
 
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
+    // Redis stores counters using UTC dates. Build the labels from UTC
+    // too, so Aug 31, 2026 correctly remains Monday everywhere.
+    const now = new Date();
 
-      date.setHours(0, 0, 0, 0);
-      date.setDate(date.getDate() - i);
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setUTCHours(0, 0, 0, 0);
+      date.setUTCDate(date.getUTCDate() - i);
+
+      const key = date.toISOString().slice(0, 10);
 
       days.push({
-        key: date.toISOString().slice(0, 10),
-        label: date.toLocaleDateString(
-          undefined,
-          { weekday: "short" }
-        ),
+        key,
+        label: date.toLocaleDateString(undefined, {
+          weekday: "short",
+          timeZone: "UTC",
+        }),
         count: 0,
       });
     }
 
-    logs.forEach((log) => {
-      const date = new Date(
-        log.timestamp || log.created_at
-      );
+    scopedFlags.forEach((flag) => {
+      const counts = evaluationCounts[flag.flag_key] || {};
 
-      if (Number.isNaN(date.getTime())) {
-        return;
-      }
-
-      const key = date
-        .toISOString()
-        .slice(0, 10);
-
-      const day = days.find(
-        (item) => item.key === key
-      );
-
-      if (day) {
-        day.count += 1;
-      }
+      days.forEach((day) => {
+        day.count += Number(counts[day.key] || 0);
+      });
     });
 
     return days;
-  }, [logs]);
+  }, [scopedFlags, evaluationCounts]);
 
   const maxActivity = Math.max(
     1,
@@ -210,32 +247,25 @@ function Analytics() {
   ========================================================= */
 
   const topEvaluatedFlags = useMemo(() => {
-    const counts = {};
+    return scopedFlags
+      .map((flag) => {
+        const counts = evaluationCounts[flag.flag_key] || {};
 
-    logs
-      .filter((log) =>
-        String(log.action || "")
-          .toUpperCase()
-          .includes("EVALUAT")
-      )
-      .forEach((log) => {
-        const key =
-          log.flag_key || "Unknown";
+        const count = Object.values(counts).reduce(
+          (sum, value) =>
+            sum + Number(value || 0),
+          0
+        );
 
-        counts[key] =
-          (counts[key] || 0) + 1;
-      });
-
-    return Object.entries(counts)
-      .map(([flag, count]) => ({
-        flag,
-        count,
-      }))
-      .sort(
-        (a, b) => b.count - a.count
-      )
+        return {
+          flag: flag.flag_key,
+          count,
+        };
+      })
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count)
       .slice(0, 6);
-  }, [logs]);
+  }, [scopedFlags, evaluationCounts]);
 
   const maxEvaluations = Math.max(
     1,
@@ -487,7 +517,7 @@ function Analytics() {
             tone="purple"
             label="Evaluations"
             value={metrics.evaluations}
-            detail="Recorded evaluation events"
+            detail="Redis evaluation count · last 7 days"
           />
 
           <MetricCard
@@ -510,8 +540,8 @@ function Analytics() {
           {/* ACTIVITY */}
 
           <ChartCard
-            title="Activity Trend"
-            subtitle="Audit activity over the last 7 days"
+            title="Evaluation Trend"
+            subtitle="Redis evaluation counts over the last 7 days"
           >
             <div style={activityChart}>
 
@@ -611,7 +641,7 @@ function Analytics() {
 
           <ChartCard
             title="Most Evaluated Flags"
-            subtitle="Based on FLAG_EVALUATION audit entries"
+            subtitle="Based on Redis evaluation counters"
           >
             {topEvaluatedFlags.length === 0 ? (
               <EmptyState

@@ -1,406 +1,299 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
 
-from app.services.evaluation import (
+from app.schemas.evaluation import (
     EvaluationRequest,
-    EvaluationResponse
+    EvaluationResponse,
 )
 
-from app.services.evaluator import evaluate_flag
+from app.services.evaluator import (
+    evaluate_flag,
+)
 
 from app.services.redis_client import (
     get_cache,
     set_cache,
-    increment_evaluation_counter
+    increment_evaluation_counter,
+    get_evaluation_counts,
 )
 
-from app.crud.audit_log import create_log
+from app.crud.audit_log import (
+    create_log,
+)
 
-from app.models.evaluation_metric import EvaluationMetric
 
-from datetime import datetime, timedelta, timezone
-
+# =========================================================
+# ROUTER
+# =========================================================
 
 router = APIRouter(
     prefix="/evaluation",
-    tags=["Evaluation"]
+    tags=["Evaluation"],
 )
 
 
-# =====================================================
-# APPLICATION TIMEZONE
-# =====================================================
-# IST = UTC + 5 hours 30 minutes
-#
-# Using a fixed timezone here avoids the requirement
-# for the external "tzdata" package on Windows.
-# =====================================================
-
-ANALYTICS_TIMEZONE = timezone(
-    timedelta(
-        hours=5,
-        minutes=30
-    )
-)
-
-
-# =====================================================
+# =========================================================
 # EVALUATE FLAG
-# =====================================================
+# =========================================================
 
 @router.post(
     "/",
-    response_model=EvaluationResponse
+    response_model=EvaluationResponse,
 )
 def evaluate(
     request: EvaluationRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    Evaluate a feature flag for an environment and user context.
 
-    # =================================================
-    # 1. COUNT EVERY EVALUATION
-    # =================================================
-    #
-    # IMPORTANT:
-    # This MUST happen before the Redis cache check.
-    #
-    # Every request is an evaluation, even when the
-    # actual flag result comes from Redis cache.
-    # =================================================
+    Flow:
 
-    increment_evaluation_counter(
-        request.flag_key
+        Request
+          ↓
+        Analytics counter
+          ↓
+        Evaluation audit
+          ↓
+        Redis cache lookup
+          ↓
+        Cache HIT → return cached result
+          ↓
+        Cache MISS → evaluation engine
+          ↓
+        Save result to Redis
+          ↓
+        Return result
+
+    IMPORTANT:
+    Counter and audit happen BEFORE cache lookup.
+
+    Therefore every evaluation request is counted/audited,
+    regardless of whether Redis returns a HIT or MISS.
+    """
+
+    # =====================================================
+    # 1. EXTRACT USER CONTEXT
+    # =====================================================
+
+    user_context = request.user_context or {}
+
+    user_id = user_context.get(
+        "user_id",
+        "anonymous",
     )
 
+    # Make sure the value is usable in the Redis key
+    if user_id is None:
+        user_id = "anonymous"
 
-    # =================================================
-    # 2. CREATE CACHE KEY
-    # =================================================
+    user_id = str(user_id)
+
+
+    # =====================================================
+    # 2. CREATE UNIQUE CACHE KEY
+    # =====================================================
 
     cache_key = (
         f"evaluation:"
         f"{request.flag_key}:"
         f"{request.environment_id}:"
-        f"{request.user_id or 'anonymous'}"
+        f"{user_id}"
     )
 
 
-    # =================================================
-    # 3. CHECK REDIS CACHE
-    # =================================================
+    # =====================================================
+    # 3. ANALYTICS COUNTER
+    # =====================================================
+
+    # IMPORTANT:
+    # This MUST happen before Redis cache lookup.
+    #
+    # Therefore:
+    #
+    # Cache MISS → counter +1
+    # Cache HIT  → counter +1
+    #
+    # Every evaluation request is counted.
+
+    counter_result = increment_evaluation_counter(
+        flag_key=request.flag_key,
+    )
+
+    print(
+        "EVALUATION COUNTER:",
+        request.flag_key,
+        counter_result,
+    )
+
+
+    # =====================================================
+    # 4. EVALUATION AUDIT
+    # =====================================================
+
+    # IMPORTANT:
+    # Audit every evaluation request, including cache HITs.
+
+    try:
+
+        create_log(
+            db=db,
+            action="FLAG_EVALUATION",
+            flag_key=request.flag_key,
+            user=user_id,
+            environment_id=request.environment_id,
+            before_value=None,
+            after_value=None,
+        )
+
+    except Exception as e:
+
+        # Do not allow audit failure to silently break
+        # the complete evaluation request.
+        #
+        # The evaluation itself should still be allowed
+        # to continue.
+
+        print(
+            "Evaluation audit log error:",
+            e,
+        )
+
+
+    # =====================================================
+    # 5. CHECK REDIS CACHE
+    # =====================================================
 
     cached_result = get_cache(
         cache_key
     )
 
+
+    # =====================================================
+    # 6. CACHE HIT
+    # =====================================================
+
     if cached_result is not None:
 
         print(
             "REDIS CACHE HIT:",
-            cache_key
+            cache_key,
         )
 
         return cached_result
 
 
-    # =================================================
-    # 4. CACHE MISS
-    # =================================================
+    # =====================================================
+    # 7. CACHE MISS
+    # =====================================================
 
     print(
         "REDIS CACHE MISS:",
-        cache_key
+        cache_key,
     )
 
 
-    # =================================================
-    # 5. EVALUATE FLAG
-    # =================================================
+    # =====================================================
+    # 8. RUN EVALUATION ENGINE
+    # =====================================================
 
     result = evaluate_flag(
-
         db=db,
-
         flag_key=request.flag_key,
-
         environment_id=request.environment_id,
-
-        user_context={
-            "user_id": request.user_id
-        }
-        if request.user_id
-        else None,
-
+        user_context=user_context,
     )
 
 
-    # =================================================
-    # 6. SAVE RESULT IN REDIS
-    # =================================================
+    # =====================================================
+    # 9. SAVE RESULT IN REDIS
+    # =====================================================
 
-    set_cache(
-
+    cache_saved = set_cache(
         key=cache_key,
-
         value=result,
+        expire=300,
+    )
 
-        expire=300
-
+    print(
+        "EVALUATION CACHE SAVED:",
+        cache_saved,
     )
 
 
-    # =================================================
-    # 7. AUDIT LOG
-    # =================================================
-
-    create_log(
-
-        db=db,
-
-        action="FLAG_EVALUATION",
-
-        flag_key=request.flag_key,
-
-        user=request.user_id or "anonymous"
-
-    )
-
-
-    # =================================================
-    # 8. RETURN RESULT
-    # =================================================
+    # =====================================================
+    # 10. RETURN RESULT
+    # =====================================================
 
     return result
 
 
-# =====================================================
-# EVALUATION ANALYTICS
-# =====================================================
+# =========================================================
+# ANALYTICS
+# =========================================================
 
 @router.get(
-    "/analytics/{flag_key}"
+    "/analytics/{flag_key}",
 )
-def get_evaluation_analytics(
-
+def evaluation_analytics(
     flag_key: str,
-
-    days: int = Query(
-        7,
-        ge=1,
-        le=30
-    ),
-
-    db: Session = Depends(get_db)
-
+    days: int = 7,
 ):
+    """
+    Return daily evaluation counts for a feature flag.
 
-    # =================================================
-    # 1. CURRENT UTC TIME
-    # =================================================
+    Example:
 
-    now_utc = datetime.now(
-        timezone.utc
-    )
+        GET /evaluation/analytics/dark_mode?days=7
 
-
-    # =================================================
-    # 2. CONVERT UTC -> IST
-    # =================================================
-
-    now_local = now_utc.astimezone(
-        ANALYTICS_TIMEZONE
-    )
-
-
-    # =================================================
-    # 3. FIND START OF TODAY IN IST
-    # =================================================
-    #
-    # Example:
-    #
-    # Today = 30 Aug
-    # days = 7
-    #
-    # Start date = 24 Aug 00:00 IST
-    # =================================================
-
-    start_local = (
-        now_local
-        .replace(
-            hour=0,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-        - timedelta(
-            days=days - 1
-        )
-    )
-
-
-    # =================================================
-    # 4. CONVERT START IST -> UTC
-    # =================================================
-    #
-    # Example:
-    #
-    # 30 Aug 00:00 IST
-    # =
-    # 29 Aug 18:30 UTC
-    #
-    # This is important because database timestamps
-    # are stored/queried using UTC.
-    # =================================================
-
-    start_utc = start_local.astimezone(
-        timezone.utc
-    )
-
-
-    # =================================================
-    # 5. GET HOURLY METRICS
-    # =================================================
-
-    metrics = (
-
-        db.query(
-            EvaluationMetric
-        )
-
-        .filter(
-            EvaluationMetric.flag_key == flag_key
-        )
-
-        .filter(
-            EvaluationMetric.hour >= start_utc
-        )
-
-        .order_by(
-            EvaluationMetric.hour.asc()
-        )
-
-        .all()
-
-    )
-
-
-    # =================================================
-    # 6. CREATE DAILY BUCKETS
-    # =================================================
-
-    daily_counts = {}
-
-    for i in range(days):
-
-        local_date = (
-            start_local
-            + timedelta(
-                days=i
-            )
-        ).date()
-
-
-        daily_counts[
-            local_date.isoformat()
-        ] = 0
-
-
-    # =================================================
-    # 7. AGGREGATE HOURLY -> DAILY
-    # =================================================
-
-    for metric in metrics:
-
-        metric_hour = metric.hour
-
-
-        # ---------------------------------------------
-        # Handle timezone-naive DB timestamps
-        # ---------------------------------------------
-
-        if metric_hour.tzinfo is None:
-
-            # Database value is treated as UTC.
-
-            metric_hour = metric_hour.replace(
-                tzinfo=timezone.utc
-            )
-
-
-        # ---------------------------------------------
-        # Make sure timestamp is UTC
-        # ---------------------------------------------
-
-        metric_hour = metric_hour.astimezone(
-            timezone.utc
-        )
-
-
-        # ---------------------------------------------
-        # UTC -> IST
-        # ---------------------------------------------
-
-        metric_local = metric_hour.astimezone(
-            ANALYTICS_TIMEZONE
-        )
-
-
-        # ---------------------------------------------
-        # Get IST date
-        # ---------------------------------------------
-
-        metric_date = (
-            metric_local
-            .date()
-            .isoformat()
-        )
-
-
-        # ---------------------------------------------
-        # Add metric count to correct day
-        # ---------------------------------------------
-
-        if metric_date in daily_counts:
-
-            daily_counts[
-                metric_date
-            ] += metric.count
-
-
-    # =================================================
-    # 8. CREATE RESPONSE DATA
-    # =================================================
-
-    data = [
+    Response:
 
         {
-            "date": date,
-            "count": count
+            "flag_key": "dark_mode",
+            "days": 7,
+            "counts": {
+                "2026-08-31": 3,
+                "2026-08-30": 0,
+                "2026-08-29": 0
+            }
         }
+    """
 
-        for date, count
-        in daily_counts.items()
+    # =====================================================
+    # VALIDATE DAYS
+    # =====================================================
 
-    ]
+    if days < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="days must be at least 1",
+        )
+
+    if days > 365:
+        raise HTTPException(
+            status_code=400,
+            detail="days cannot be greater than 365",
+        )
 
 
-    # =================================================
-    # 9. RETURN ANALYTICS
-    # =================================================
+    # =====================================================
+    # GET REDIS COUNTS
+    # =====================================================
+
+    counts = get_evaluation_counts(
+        flag_key=flag_key,
+        days=days,
+    )
+
+
+    # =====================================================
+    # RETURN ANALYTICS
+    # =====================================================
 
     return {
-
         "flag_key": flag_key,
-
         "days": days,
-
-        "total_evaluations": sum(
-            item["count"]
-            for item in data
-        ),
-
-        "data": data
-
+        "counts": counts,
     }

@@ -24,6 +24,8 @@ function FlagPage() {
   const [loading, setLoading] =
     useState(true);
 
+  const [error, setError] =
+    useState("");
 
   const [selectedEnvironment, setSelectedEnvironment] =
     useState(
@@ -45,6 +47,7 @@ function FlagPage() {
     try {
 
       setLoading(true);
+      setError("");
 
       const [
         flagResponse,
@@ -135,6 +138,10 @@ function FlagPage() {
         error
       );
 
+      setError(
+        error.response?.data?.detail ||
+        "Unable to load feature flags. Please try again."
+      );
     } finally {
 
       setLoading(false);
@@ -272,6 +279,44 @@ function FlagPage() {
 
 
   if (loading) {
+    if (error) {
+
+  return (
+
+    <main className="dashboard-main">
+
+      <div className="dashboard-container">
+
+        <div className="error-state">
+
+          <div className="empty-icon">
+            !
+          </div>
+
+          <h2>
+            Unable to load feature flags
+          </h2>
+
+          <p>
+            {error}
+          </p>
+
+          <button
+            className="primary-button"
+            onClick={fetchData}
+          >
+            Try Again
+          </button>
+
+        </div>
+
+      </div>
+
+    </main>
+
+  );
+
+}
 
     return (
 
